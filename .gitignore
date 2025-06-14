@@ -1,0 +1,44 @@
+# Node.js
+/node_modules
+/server/node_modules
+/client/node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite cache
+/client/dist
+/client/.vite
+
+# Build output (por si usas algo como tsup o esbuild)
+/server/dist
+/server/build
+
+# Optional ESLint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Log files
+logs
+*.log
+*.log.*
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# dotenv environment files
+.env
+.env.*  # Incluye .env.development, .env.production, etc.
+
+# IDEs y editores
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Optional test coverage results
+coverage/
