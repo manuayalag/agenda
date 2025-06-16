@@ -46,6 +46,10 @@ db.Sector.belongsTo(db.User, {
   constraints: false  // Importante: evita que Sequelize intente crear la FK al sincronizar
 });
 
+// Un usuario doctor tiene un perfil de doctor
+db.User.hasOne(db.Doctor, { foreignKey: 'userId', as: 'doctorProfile' });
+db.Doctor.belongsTo(db.User, { foreignKey: 'userId', as: 'user' });
+
 // Un sector tiene muchos usuarios
 db.Sector.hasMany(db.User, {
   foreignKey: 'sectorId',

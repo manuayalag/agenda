@@ -24,7 +24,7 @@ const Dashboard = () => {
         // Obtener fecha actual y rango de la semana
         const today = new Date();
         const todayStr = today.toISOString().split('T')[0];
-          const weekStart = new Date();
+        const weekStart = new Date();
         weekStart.setDate(today.getDate());
         
         const weekEnd = new Date();
@@ -36,24 +36,58 @@ const Dashboard = () => {
           startDate: todayStr,
           endDate: weekEndStr
         };
-          // Si es un doctor, filtrar solo sus citas
-        let appointmentsResponse;
-        if (user.role === 'doctor') {
-          // Verificar si el doctor tiene un ID asociado
-          if (!user.doctorId) {
-            throw new Error("Este usuario doctor no tiene un ID de doctor asociado");
-          }
-          appointmentsResponse = await AppointmentService.getDoctorAppointments(user.doctorId, params);
-        } else {
-          // Si es admin de sector, filtrar por su sector
-          if (user.role === 'sector_admin' && user.sectorId) {
-            params.sectorId = user.sectorId;
-          }
-          appointmentsResponse = await AppointmentService.getFiltered(params);
-        }
         
-        // Filtrar citas de hoy y de la semana
-        const allAppointments = appointmentsResponse.data;
+        // Variable para almacenar la respuesta de las citas y estadísticas
+        let appointmentsResponse = { data: [] };
+        let totalDoctors = 0;
+        let totalPatients = 0;
+          try {
+          if (user.role === 'doctor') {
+            // Para usuarios doctores, buscar sus citas específicas
+            // Primero verificamos si tenemos la información del doctor
+            if (!user.doctorId) {
+              console.warn("Este usuario doctor no tiene un ID de doctor asociado");
+            } else {
+              const response = await AppointmentService.getDoctorAppointments(user.doctorId, params);
+              // Manejar tanto la respuesta directa como la estructura con data
+              appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
+            }
+          } else {
+            // Si es admin de sector, filtrar por su sector
+            if (user.role === 'sector_admin' && user.sectorId) {
+              params.sectorId = user.sectorId;
+            }
+            
+            const response = await AppointmentService.getFiltered(params);
+            // Manejar tanto la respuesta directa como la estructura con data
+            appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
+            
+            // Obtener total de doctores y pacientes (solo para admins y sector_admin)
+            if (isAdmin || isSectorAdmin) {
+              try {
+                const doctorsResponse = user.role === 'sector_admin' && user.sectorId 
+                  ? await DoctorService.getBySector(user.sectorId)
+                  : await DoctorService.getAll();
+                  
+                totalDoctors = doctorsResponse?.data?.length || 0;
+              } catch (err) {
+                console.error("Error al obtener doctores:", err);
+              }
+              
+              try {
+                const patientsResponse = await PatientService.getAll();
+                totalPatients = patientsResponse?.data?.length || 0;
+              } catch (err) {
+                console.error("Error al obtener pacientes:", err);
+                // No bloqueamos la ejecución si hay un error al cargar pacientes
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error al obtener citas:", err);
+        }
+          // Filtrar citas de hoy y de la semana
+        const allAppointments = appointmentsResponse?.data?.data || appointmentsResponse?.data || [];
         const todayAppointments = allAppointments.filter(
           app => app.date === todayStr
         );
@@ -68,20 +102,6 @@ const Dashboard = () => {
             return a.startTime.localeCompare(b.startTime);
           })
           .slice(0, 5);
-        
-        // Obtener total de doctores y pacientes (solo para admins)
-        let totalDoctors = 0;
-        let totalPatients = 0;
-        
-        if (isSectorAdmin) {
-          const doctorsResponse = user.role === 'sector_admin' && user.sectorId 
-            ? await DoctorService.getBySector(user.sectorId)
-            : await DoctorService.getAll();
-          totalDoctors = doctorsResponse.data.length;
-          
-          const patientsResponse = await PatientService.getAll();
-          totalPatients = patientsResponse.data.length;
-        }
         
         // Actualizar estadísticas
         setStats({
@@ -102,7 +122,7 @@ const Dashboard = () => {
     };
     
     fetchDashboardData();
-  }, [user, isSectorAdmin]);
+  }, [user, isSectorAdmin, isAdmin]);
   
   const getStatusBadge = (status) => {
     switch (status) {
@@ -228,13 +248,16 @@ const Dashboard = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {upcomingAppointments.map(appointment => (
-                        <tr key={appointment.id}>
+                      {upcomingAppointments.map(appointment => (                        <tr key={appointment.id}>
                           <td>{appointment.date}</td>
-                          <td>{appointment.startTime.substring(0, 5)}</td>
-                          <td>{appointment.patient.fullName}</td>
+                          <td>{appointment.startTime ? appointment.startTime.substring(0, 5) : '--:--'}</td>
+                          <td>{appointment.patient?.fullName || 'Paciente no disponible'}</td>
                           {user.role !== 'doctor' && (
-                            <td>{appointment.doctor.user.fullName}</td>
+                            <td>
+                              {appointment.doctor?.user?.fullName || 
+                               appointment.doctor?.userId ? `Doctor ID: ${appointment.doctor.userId}` : 
+                               'Doctor no disponible'}
+                            </td>
                           )}
                           <td>{getStatusBadge(appointment.status)}</td>
                           <td>

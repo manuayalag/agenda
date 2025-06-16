@@ -1,14 +1,989 @@
-import { Container, Card } from 'react-bootstrap';
+import React, { useState, useEffect, useContext } from 'react';
+import { Container, Card, Form, Row, Col, Button, Alert, Spinner, Badge } from 'react-bootstrap';
+import { useParams, useNavigate } from 'react-router-dom';
+import { AuthContext } from '../../context/AuthContextValue';
+import { AppointmentService, DoctorService, PatientService, SectorService } from '../../utils/api';
+import { format } from 'date-fns';
+
+// Se usan estilos de Bootstrap directamente para el grid de horarios
 
 const AppointmentForm = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const isEditing = !!id;
+  const { user, isAdmin } = useContext(AuthContext);
+  // Utilidad para comprobar si un doctor trabaja en un día específico
+  const isDoctorWorkingOnDate = (doctor, dateStr) => {
+    if (!doctor || !doctor.workingDays || !dateStr || !Array.isArray(doctor.workingDays)) {
+      console.log('Datos faltantes para verificar día laborable:', { 
+        doctor: !!doctor, 
+        workingDays: doctor ? !!doctor.workingDays : false,
+        dateStr: !!dateStr
+      });
+      return false;
+    }
+    
+    try {
+      // Asegurar formato de fecha correcto (YYYY-MM-DD)
+      let formattedDate = dateStr;
+      if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const tempDate = new Date(dateStr);
+        formattedDate = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+      }
+        // Para evitar problemas de zona horaria, usamos los componentes de la fecha directamente
+      // En lugar de confiar en parseISO que puede tener problemas con las zonas horarias
+      const [year, month, day] = formattedDate.split('-').map(Number);
+      // Crear la fecha usando componentes específicos (año, mes (0-indexed), día)
+      const dateObj = new Date(year, month - 1, day);
+      
+      // getDay() sobre este objeto date para obtener el día correcto
+      const dayOfWeek = dateObj.getDay(); // 0-6 (0=domingo, 1=lunes, ..., 6=sábado)
+      
+      // Convertir de 0-6 (domingo a sábado) a 1-7 (lunes a domingo) como lo usa la base de datos
+      const dayNumber = dayOfWeek === 0 ? 7 : dayOfWeek;
+      
+      // Información detallada para depuración
+      console.log('Verificando día de trabajo para fecha:', formattedDate);
+      console.log('Fecha parseada:', format(dateObj, 'yyyy-MM-dd'));
+      console.log('date-fns getDay():', dayOfWeek, '(', ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][dayOfWeek], ')');
+      console.log('Convertido a formato 1-7:', dayNumber);
+      console.log('Días laborables del doctor (originales):', doctor.workingDays);
+      
+      // Convertir todos los días laborables a números y asegurarnos de que sean válidos
+      const workingDaysNumbers = [];
+      for (let day of doctor.workingDays) {
+        // Convertir string a número si es necesario
+        let dayNum = typeof day === 'string' ? parseInt(day) : day;
+        
+        // Solo incluir valores válidos (1-7)
+        if (!isNaN(dayNum) && dayNum >= 1 && dayNum <= 7) {
+          workingDaysNumbers.push(dayNum);
+        } else {
+          console.warn(`Día inválido encontrado en workingDays: ${day} (${typeof day})`);
+        }
+      }
+      
+      console.log('Días laborables (como números válidos):', workingDaysNumbers);
+      
+      // Si no hay días válidos, considerar que trabaja todos los días para prevenir bloqueos
+      if (workingDaysNumbers.length === 0) {
+        console.warn('No se encontraron días laborables válidos, asumiendo que trabaja todos los días');
+        return true;
+      }
+      
+      // Verificar si el día está en los días laborables usando includes para comparación exacta
+      const isDayWorking = workingDaysNumbers.includes(dayNumber);
+      
+      console.log('¿El doctor trabaja ese día?', isDayWorking);
+      return isDayWorking;
+    } catch (error) {
+      console.error('Error al verificar día laborable:', error);
+      // En caso de error, asumimos que sí trabaja para no bloquear
+      return true;
+    }
+  };
+  
+  // Utilidad para obtener los nombres de los días laborables
+  const getWorkingDaysLabels = (doctor) => {
+    if (!doctor || !doctor.workingDays || !Array.isArray(doctor.workingDays)) return [];
+    
+    const dayNames = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    return doctor.workingDays
+      .map(day => {
+        const dayNum = typeof day === 'string' ? parseInt(day) : day;
+        return dayNum >= 1 && dayNum <= 7 ? dayNames[dayNum] : null;
+      })
+      .filter(day => day !== null);
+  };
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [sectors, setSectors] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [specialties, setSpecialties] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [availableSlots, setAvailableSlots] = useState([]);  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [formKey, setFormKey] = useState(Date.now()); // Para forzar la recarga del formulario
+  const [originalAppointment, setOriginalAppointment] = useState(null); // Almacenar la cita original
+  const [debugInfo, setDebugInfo] = useState(null); // Para almacenar información de diagnóstico
+  
+  const [formData, setFormData] = useState({
+    doctorId: '',
+    patientId: '',
+    date: '',
+    startTime: '',
+    endTime: '',
+    status: 'scheduled',
+    reason: '',
+    notes: '',
+    sectorId: user.role === 'sector_admin' ? user.sectorId : ''
+  });
+  
+  // Cargar datos iniciales
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        setLoading(true);
+
+        // Si estamos editando, cargar los datos de la cita
+        if (isEditing) {
+          const appointmentResponse = await AppointmentService.getById(id);
+          const appointment = appointmentResponse.data;
+          setOriginalAppointment(appointment); // Guardar la cita original
+          
+          // Formatear fechas y horas para asegurar consistencia
+          const formattedDate = new Date(appointment.date).toISOString().split('T')[0];
+          
+          setFormData({
+            ...appointment,
+            date: formattedDate,
+            startTime: appointment.startTime,
+            endTime: appointment.endTime,
+            doctorId: appointment.doctorId,
+            patientId: appointment.patientId,
+            sectorId: appointment.doctor?.sectorId || (user.role === 'sector_admin' ? user.sectorId : '')
+          });
+          
+          // Si tenemos doctor, precargarlo
+          if (appointment.doctorId) {
+            const doctorResponse = await DoctorService.getById(appointment.doctorId);
+            const doctor = doctorResponse.data;
+            setSelectedDoctor(doctor);
+            console.log('Doctor cargado para edición:', doctor);
+
+            // Cargar horarios disponibles para esta cita
+            console.log(`Cargando disponibilidad para cita en edición: Doctor ${appointment.doctorId}, Fecha ${formattedDate}`);
+            await loadAvailableSlots(appointment.doctorId, formattedDate);
+          }
+        }
+        
+        // Cargar sectores (solo si es admin)
+        if (isAdmin) {
+          const sectorsResponse = await SectorService.getAll();
+          setSectors(sectorsResponse.data);
+        }
+        
+        // Cargar doctores según filtros (sector)
+        const sectorIdToUse = formData.sectorId || user.sectorId;
+        await loadDoctors(sectorIdToUse);
+        
+        // Cargar pacientes para búsqueda
+        const patientsResponse = await PatientService.getAll();
+        setPatients(patientsResponse.data);
+
+      } catch (err) {
+        setError('Error al cargar los datos. Por favor, intente nuevamente.');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchInitialData();
+  }, [id, isEditing, isAdmin, user.sectorId, user.role]);
+  
+  // Cargar doctores según el sector seleccionado
+  const loadDoctors = async (sectorId) => {
+    try {
+      let doctorsResponse;
+      
+      if (sectorId) {
+        doctorsResponse = await DoctorService.getBySector(sectorId);
+      } else {
+        doctorsResponse = await DoctorService.getAll();
+      }
+      
+      setDoctors(doctorsResponse.data);
+      
+      // Agrupar doctores por especialidad para mostrar en el selector
+      const uniqueSpecialties = [...new Set(doctorsResponse.data.map(doctor => doctor.specialty?.id))];
+      const specialtiesData = [];
+      
+      for (const specialtyId of uniqueSpecialties) {
+        const doctor = doctorsResponse.data.find(d => d.specialty?.id === specialtyId);
+        if (doctor && doctor.specialty) {
+          specialtiesData.push(doctor.specialty);
+        }
+      }
+      
+      setSpecialties(specialtiesData);
+      
+    } catch (err) {
+      console.error('Error al cargar doctores:', err);
+    }
+  };
+    // Cargar horarios disponibles para un doctor en una fecha específica
+  const loadAvailableSlots = async (doctorId, date) => {
+    try {
+      if (!doctorId || !date) {
+        console.log('Faltan parámetros para cargar disponibilidad:', { doctorId, date });
+        setAvailableSlots([]);
+        return;
+      }
+      
+      console.log(`Cargando disponibilidad para doctor ${doctorId} en fecha ${date}`);
+        // Si aún no tenemos los datos del doctor, cargarlo primero
+      let doctorData = selectedDoctor;
+      if (!doctorData || doctorData.id !== parseInt(doctorId)) {
+        try {
+          console.log('Cargando datos del doctor desde API...');
+          const doctorResponse = await DoctorService.getById(doctorId);
+          doctorData = doctorResponse.data;
+          setSelectedDoctor(doctorData);
+          console.log('Doctor cargado desde API:', doctorData);
+        } catch (err) {
+          console.error('Error al cargar datos del doctor:', err);
+          setError('Error al cargar datos del doctor seleccionado');
+          return;
+        }
+      }
+        // Verificar primero si el doctor trabaja ese día antes de hacer la solicitud
+      if (doctorData) {
+        // Asegurar el formato correcto de la fecha para validación
+        console.log('Verificando si el doctor trabaja en fecha:', date);
+        console.log('Datos del doctor cargados:', {
+          id: doctorData.id,
+          workingDays: doctorData.workingDays,
+          workingHourStart: doctorData.workingHourStart,
+          workingHourEnd: doctorData.workingHourEnd,
+          appointmentDuration: doctorData.appointmentDuration
+        });
+        
+        // Validar que la fecha tenga el formato correcto (YYYY-MM-DD)
+        let dateToCheck = date;
+        if (date && !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Si no está en formato correcto, intentar convertirla
+          const tempDate = new Date(date);
+          dateToCheck = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+        }
+        console.log('Fecha normalizada para verificación:', dateToCheck);
+        
+        // Si el doctor no tiene configurados workingDays o workingHours, mostrar advertencia
+        if (!doctorData.workingDays || doctorData.workingDays.length === 0) {
+          console.warn('El doctor no tiene días laborables configurados');
+          setError('El doctor no tiene horario configurado. Contacte al administrador.');
+        }
+        
+        if (!doctorData.workingHourStart || !doctorData.workingHourEnd) {
+          console.warn('El doctor no tiene horario de trabajo configurado');
+          setError('El doctor no tiene horario de trabajo configurado. Contacte al administrador.');
+        }
+        
+        const works = isDoctorWorkingOnDate(doctorData, dateToCheck);
+        
+        if (!works) {
+          console.log('El doctor no trabaja este día. No se realizará la consulta de disponibilidad.');
+          setAvailableSlots([]);
+          
+          // Si estamos editando, añadir el horario actual solo si es la misma cita
+          if (isEditing && originalAppointment && 
+              parseInt(originalAppointment.doctorId) === parseInt(doctorId) && 
+              new Date(originalAppointment.date).toISOString().split('T')[0] === date) {
+            
+            console.log('Añadiendo horario actual para edición, aunque el doctor no trabaja este día normalmente.');
+            setAvailableSlots([{
+              start: originalAppointment.startTime,
+              end: originalAppointment.endTime
+            }]);
+          }
+          return;
+        }
+      }
+      
+      // Debug información de días laborables
+      if (doctorData && doctorData.workingDays) {
+        const requestDay = new Date(date).getDay();
+        const dayNumber = requestDay === 0 ? 7 : requestDay;
+        console.log('Día de la semana para la fecha seleccionada:', dayNumber);
+        console.log('Días laborables del doctor (tipo):', typeof doctorData.workingDays, doctorData.workingDays);
+        console.log('¿El doctor trabaja ese día?', isDoctorWorkingOnDate(doctorData, date));
+      }
+        // Asegurarnos de que la fecha esté en el formato correcto para la API
+      const apiDateFormat = new Date(date).toISOString().split('T')[0];
+      console.log('Solicitando disponibilidad con fecha:', apiDateFormat);
+        const response = await DoctorService.getAvailability(doctorId, apiDateFormat);
+      console.log('Respuesta de disponibilidad:', response.data);
+      console.log('Horarios disponibles recibidos:', response.data.availableSlots ? response.data.availableSlots.length : 0);
+      
+      // Guardar información adicional de debug
+      if (response.data.workingInfo) {
+        console.log('Información de horario del doctor:', response.data.workingInfo);
+        setError(null); // Limpiar errores previos
+      }
+      
+      // Guardar información de diagnóstico para mostrar mensajes específicos al usuario
+      setDebugInfo({
+        reason: response.data.reason,
+        workingHours: response.data.workingHours,
+        appointments: response.data.appointments,
+        workingInfo: response.data.workingInfo
+      });
+      
+      // Si el backend indica que hay un problema con el horario del doctor
+      if (response.data.reason) {
+        console.log('Razón por la que no hay horarios disponibles:', response.data.reason);
+        
+        if (response.data.reason === 'no_working_days') {
+          setError('El doctor no tiene días laborables configurados.');
+        } else if (response.data.reason === 'no_working_hours') {
+          setError('El doctor no tiene horario de trabajo configurado.');
+        } else if (response.data.reason === 'invalid_working_hours') {
+          setError('El horario de trabajo del doctor está configurado incorrectamente.');
+        }
+      }
+      
+      if (response.data.availableSlots && Array.isArray(response.data.availableSlots)) {
+        let slots = [...response.data.availableSlots];
+        
+        // Si estamos editando, incluir el horario actual de la cita en la lista de disponibles
+        if (isEditing && originalAppointment) {
+          const isCurrentAppointment = 
+            parseInt(originalAppointment.doctorId) === parseInt(doctorId) && 
+            new Date(originalAppointment.date).toISOString().split('T')[0] === date;
+            
+          if (isCurrentAppointment) {
+            console.log('Incluyendo el horario actual de la cita en disponibles', originalAppointment);
+            
+            const currentSlot = {
+              start: originalAppointment.startTime,
+              end: originalAppointment.endTime
+            };
+            
+            // Verificar si el slot actual ya existe en la lista
+            const slotExists = slots.some(
+              slot => slot.start === currentSlot.start && slot.end === currentSlot.end
+            );
+            
+            if (!slotExists) {
+              console.log('Añadiendo el horario actual porque no existe en los disponibles:', currentSlot);
+              slots.push({ ...currentSlot, isOriginal: true });
+              // Ordenar los slots por hora de inicio
+              slots.sort((a, b) => a.start.localeCompare(b.start));
+            } else {
+              // Si ya existe, márcalo como original
+              slots = slots.map(slot =>
+                slot.start === currentSlot.start && slot.end === currentSlot.end
+                  ? { ...slot, isOriginal: true }
+                  : slot
+              );
+            }
+          } else {
+            console.log('No es la cita actual que estamos editando');
+            console.log('Doctor IDs:', parseInt(originalAppointment.doctorId), parseInt(doctorId));
+            console.log('Fechas:', new Date(originalAppointment.date).toISOString().split('T')[0], date);
+          }
+        }
+        
+        setAvailableSlots(slots);
+      } else {
+        console.warn('La respuesta no contiene availableSlots válidos:', response.data);
+        setAvailableSlots([]);
+      }
+      
+    } catch (err) {
+      console.error('Error al cargar horarios disponibles:', err);
+      setError(`Error al cargar horarios: ${err.message}`);
+      setAvailableSlots([]);
+    }
+  };
+
+  // Manejar cambios en el formulario
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+    
+    // Si cambia el sector, cargar doctores de ese sector
+    if (name === 'sectorId') {
+      loadDoctors(value);
+      
+      // Resetear doctor y horarios
+      setFormData(prev => ({
+        ...prev,
+        doctorId: '',
+        startTime: '',
+        endTime: ''
+      }));
+      
+      setSelectedDoctor(null);
+      setAvailableSlots([]);
+    }
+    
+    // Si cambia el doctor, cargar sus datos y disponibilidad
+    if (name === 'doctorId') {
+      const doctorId = parseInt(value);
+      
+      // Primero obtener los datos completos del doctor
+      const loadDoctorData = async () => {
+        try {
+          // Buscar primero en los doctores cargados
+          let doctor = doctors.find(d => d.id === doctorId);
+          
+          // Si no lo encontramos o no tiene datos completos, cargarlo de nuevo
+          if (!doctor || !doctor.workingDays) {
+            const response = await DoctorService.getById(doctorId);
+            doctor = response.data;
+          }
+          
+          console.log('Doctor cargado:', doctor);
+          setSelectedDoctor(doctor);
+          
+          // Si ya hay fecha seleccionada, cargar horarios disponibles
+          if (formData.date) {
+            console.log(`Doctor seleccionado: ${doctorId}, cargando horarios para fecha: ${formData.date}`);
+            loadAvailableSlots(doctorId, formData.date);
+          }
+        } catch (error) {
+          console.error('Error al cargar datos del doctor:', error);
+          setError('Error al cargar datos del doctor seleccionado');
+        }
+      };
+      
+      loadDoctorData();
+    }
+    
+    // Si cambia la fecha, cargar horarios disponibles
+    if (name === 'date') {
+      // Resetear horarios
+      setFormData(prev => ({
+        ...prev,
+        startTime: '',
+        endTime: ''
+      }));
+      
+      if (formData.doctorId) {
+        console.log(`Fecha seleccionada: ${value}, cargando horarios para doctor: ${formData.doctorId}`);
+        loadAvailableSlots(parseInt(formData.doctorId), value);
+      }
+    }
+    
+    // Si selecciona un horario
+    if (name === 'timeSlot') {
+      const [startTime, endTime] = value.split('|');
+      
+      setFormData(prev => ({
+        ...formData,
+        startTime,
+        endTime
+      }));
+    }
+  };
+
+  // Enviar formulario
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      setSubmitting(true);
+      setError('');
+      
+      // Validaciones básicas
+      if (!formData.doctorId || !formData.patientId || !formData.date || !formData.startTime || !formData.endTime) {
+        setError('Por favor, complete todos los campos obligatorios.');
+        setSubmitting(false);
+        return;
+      }
+      
+      // Verificar si el doctor trabaja ese día (a menos que sea edición y la fecha sea la misma que la original)
+      if (selectedDoctor && 
+          (!isEditing || 
+          (isEditing && originalAppointment && formData.date !== new Date(originalAppointment.date).toISOString().split('T')[0]))
+         ) {
+        if (!isDoctorWorkingOnDate(selectedDoctor, formData.date)) {
+          setError(`El doctor seleccionado no trabaja en la fecha elegida (${new Date(formData.date).toLocaleDateString()}).`);
+          setSubmitting(false);
+          return;
+        }
+      }
+      
+      // Si estamos editando, actualizar la cita
+      if (isEditing) {
+        await AppointmentService.update(id, formData);
+        navigate('/appointments', { state: { success: 'Cita actualizada correctamente' } });
+      } else {
+        // Si estamos creando, crear la cita
+        await AppointmentService.create(formData);
+        
+        // Reiniciar formulario y mostrar mensaje
+        setFormData({
+          doctorId: '',
+          patientId: '',
+          date: '',
+          startTime: '',
+          endTime: '',
+          status: 'scheduled',
+          reason: '',
+          notes: '',
+          sectorId: user.role === 'sector_admin' ? user.sectorId : ''
+        });
+        
+        setSelectedDoctor(null);
+        setAvailableSlots([]);
+        setFormKey(Date.now()); // Forzar recarga del formulario
+        
+        navigate('/appointments', { state: { success: 'Cita creada correctamente' } });
+      }
+      
+    } catch (err) {
+      setError(`Error al guardar la cita: ${err.response?.data?.message || err.message}`);
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Container className="py-4">
-      <Card>
-        <Card.Header>
-          <h2>Formulario de Cita</h2>
+      <Card className="border-0 shadow-sm">
+        <Card.Header className="bg-white py-3">
+          <h4 className="mb-0">
+            {isEditing ? 'Editar Cita' : 'Nueva Cita'}
+          </h4>
         </Card.Header>
+        
         <Card.Body>
-          <p>Componente de formulario de citas en construcción.</p>
+          {loading ? (
+            <div className="text-center py-5">
+              <Spinner animation="border" variant="primary" />
+              <p className="mt-3">Cargando datos...</p>
+            </div>
+          ) : (
+            <Form key={formKey} onSubmit={handleSubmit}>
+              {error && (
+                <Alert variant="danger" dismissible onClose={() => setError('')}>
+                  {error}
+                </Alert>
+              )}
+              
+              <Row>
+                {/* Selector de Sector (solo para admins) */}
+                {isAdmin && (
+                  <Col md={6} className="mb-3">
+                    <Form.Group>
+                      <Form.Label>Sector</Form.Label>
+                      <Form.Select
+                        name="sectorId"
+                        value={formData.sectorId}
+                        onChange={handleChange}
+                      >
+                        <option value="">Seleccione un sector</option>
+                        {sectors.map(sector => (
+                          <option key={sector.id} value={sector.id}>
+                            {sector.name}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                )}
+                
+                {/* Selector de especialidad */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Especialidad</Form.Label>
+                    <Form.Select
+                      name="specialtyId"
+                      onChange={(e) => {
+                        // Filtrar doctores por especialidad seleccionada
+                        const specialtyDoctors = doctors.filter(
+                          d => d.specialty?.id === parseInt(e.target.value)
+                        );
+                        
+                        // Si hay doctores, seleccionar el primero
+                        if (specialtyDoctors.length > 0) {
+                          const selectedDoctorId = specialtyDoctors[0].id.toString();
+                          
+                          setFormData(prev => ({
+                            ...prev,
+                            doctorId: selectedDoctorId,
+                            startTime: '',
+                            endTime: ''
+                          }));
+                          
+                          setSelectedDoctor(specialtyDoctors[0]);
+                          
+                          // Cargar horarios si hay fecha
+                          if (formData.date) {
+                            loadAvailableSlots(parseInt(selectedDoctorId), formData.date);
+                          }
+                        }
+                      }}
+                      value={selectedDoctor?.specialty?.id || ""}
+                    >
+                      <option value="">Seleccione una especialidad</option>
+                      {specialties.map(specialty => (
+                        <option key={specialty.id} value={specialty.id}>
+                          {specialty.name}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                
+                {/* Selector de Doctor */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Doctor</Form.Label>
+                    <Form.Select
+                      name="doctorId"
+                      value={formData.doctorId}
+                      onChange={handleChange}
+                      required
+                    >
+                      <option value="">Seleccione un doctor</option>
+                      {doctors.map(doctor => (
+                        <option key={doctor.id} value={doctor.id}>
+                          {doctor.user?.fullName || `Doctor ID: ${doctor.id}`} - {doctor.specialty?.name || 'Sin especialidad'}
+                        </option>
+                      ))}
+                    </Form.Select>
+                    
+                    {/* Mostrar información de días laborables del doctor seleccionado */}
+                    {selectedDoctor && selectedDoctor.workingDays && (
+                      <div className="mt-2 small">
+                        <Alert variant="info" className="p-2">
+                          <div>
+                            <strong>Horario:</strong> {selectedDoctor.workingHourStart?.substring(0, 5)} - {selectedDoctor.workingHourEnd?.substring(0, 5)}
+                          </div>
+                          <div>
+                            <strong>Días laborables:</strong> {getWorkingDaysLabels(selectedDoctor).join(', ')}
+                          </div>
+                        </Alert>
+                      </div>
+                    )}
+                  </Form.Group>
+                </Col>
+                
+                {/* Selector de Paciente */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Paciente</Form.Label>
+                    <Form.Select
+                      name="patientId"
+                      value={formData.patientId}
+                      onChange={handleChange}
+                      required
+                    >
+                      <option value="">Seleccione un paciente</option>
+                      {patients.map(patient => (
+                        <option key={patient.id} value={patient.id}>
+                          {patient.fullName} ({patient.documentId})
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                
+                {/* Selector de Fecha */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Fecha</Form.Label>
+                    <Form.Control
+                      type="date"
+                      name="date"
+                      value={formData.date}
+                      onChange={handleChange}
+                      min={isEditing ? undefined : new Date().toISOString().split('T')[0]}
+                      required
+                    />
+                    {selectedDoctor && selectedDoctor.workingDays && (
+                      <div className="mt-2 small">
+                        <span className="fw-bold">Días laborables del doctor: </span>
+                        {selectedDoctor.workingDays.map(day => {
+                          const dayNames = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+                          const dayNum = typeof day === 'string' ? parseInt(day) : day;
+                          return (
+                            <Badge 
+                              key={dayNum} 
+                              bg={formData.date && isDoctorWorkingOnDate(selectedDoctor, formData.date) ? "success" : "secondary"}
+                              className="me-1"
+                            >
+                              {dayNames[dayNum]}
+                            </Badge>
+                          );
+                        })}
+                        {formData.date && (
+                          <div className="mt-1">
+                            {isDoctorWorkingOnDate(selectedDoctor, formData.date) ? (
+                              <Alert variant="success" className="p-1 mt-1 small">
+                                <i className="bi bi-check-circle me-1"></i>
+                                El doctor trabaja en la fecha seleccionada
+                              </Alert>
+                            ) : (
+                              <Alert variant="warning" className="p-1 mt-1 small">
+                                <i className="bi bi-exclamation-circle me-1"></i>
+                                El doctor NO trabaja en la fecha seleccionada
+                              </Alert>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Form.Group>
+                </Col>
+                  {/* Grid de Horarios Disponibles */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Horario</Form.Label>
+                    <div className="time-slot-grid">
+                      {availableSlots.length > 0 ? (
+                        <>
+                          <div className="d-flex flex-wrap gap-2 mt-2">
+                            {availableSlots.map((slot, index) => {
+                              const slotValue = `${slot.start}|${slot.end}`;
+                              const isSelected = formData.startTime && formData.endTime && 
+                                                `${formData.startTime}|${formData.endTime}` === slotValue;
+                              // Pintar de verde cualquier horario seleccionado
+                              let variant = isSelected ? "success" : "outline-primary";
+                              return (
+                                <Button 
+                                  key={index} 
+                                  variant={variant}
+                                  className={`time-slot-button ${isSelected ? 'selected' : ''}`}
+                                  onClick={() => {
+                                    const [start, end] = slotValue.split('|');
+                                    setFormData({
+                                      ...formData,
+                                      startTime: start,
+                                      endTime: end
+                                    });
+                                  }}
+                                  disabled={!formData.doctorId || !formData.date}
+                                >
+                                  {slot.start.substring(0, 5)} - {slot.end.substring(0, 5)}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                          {formData.startTime && formData.endTime && (
+                            <div className="mt-2">
+                              <Alert variant="info" className="py-1 px-2 mb-0">
+                                <strong>Horario seleccionado:</strong> {formData.startTime.substring(0,5)} - {formData.endTime.substring(0,5)}
+                              </Alert>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-muted mt-2">
+                          {formData.doctorId && formData.date ? (
+                            <p>No hay horarios disponibles</p>
+                          ) : (
+                            <p>Seleccione doctor y fecha para ver horarios</p>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Campo oculto para mantener compatibilidad con el formulario */}
+                      <input
+                        type="hidden"
+                        name="timeSlot"
+                        value={formData.startTime && formData.endTime ? `${formData.startTime}|${formData.endTime}` : ""}
+                        required
+                      />
+                    </div>{formData.doctorId && formData.date && (
+                      <div className="mt-2">                        {availableSlots.length === 0 ? (
+                          <Alert variant="warning" className="p-2">
+                            <i className="bi bi-exclamation-circle me-2"></i>
+                            No hay horarios disponibles para esta fecha. 
+                            {selectedDoctor && selectedDoctor.workingDays && !isDoctorWorkingOnDate(selectedDoctor, formData.date) && 
+                              " El doctor no trabaja este día."
+                            }
+                            {selectedDoctor && selectedDoctor.workingDays && isDoctorWorkingOnDate(selectedDoctor, formData.date) && (
+                              debugInfo && debugInfo.reason ? (
+                                debugInfo.reason === 'all_slots_booked' ? 
+                                  " Todas las citas para este día ya están reservadas." : 
+                                debugInfo.reason === 'no_working_hours' ? 
+                                  " El doctor no tiene horario de trabajo configurado." :
+                                debugInfo.reason === 'invalid_working_hours' ? 
+                                  " El horario de trabajo del doctor está configurado incorrectamente." :
+                                debugInfo.reason === 'fragmented_schedule' ? 
+                                  " No hay slots disponibles debido a la fragmentación del horario." :
+                                  " No se pudieron generar horarios disponibles."
+                              ) : " Todas las citas para este día ya están reservadas."
+                            )}
+                            {(!selectedDoctor || !selectedDoctor.workingDays || selectedDoctor.workingDays.length === 0) && 
+                              " El doctor no tiene días laborables configurados."
+                            }
+                            {selectedDoctor && (!selectedDoctor.workingHourStart || !selectedDoctor.workingHourEnd) && 
+                              " Los horarios de trabajo del doctor no están configurados correctamente."
+                            }
+                          </Alert>
+                        ) : (
+                          <Alert variant="success" className="p-2">
+                            <i className="bi bi-check-circle me-2"></i>
+                            {availableSlots.length} horario{availableSlots.length > 1 ? 's' : ''} disponible{availableSlots.length > 1 ? 's' : ''}
+                            {selectedDoctor && selectedDoctor.workingHourStart && selectedDoctor.workingHourEnd && (
+                              <span className="ms-2">
+                                (Horario del doctor: {selectedDoctor.workingHourStart.substring(0, 5)} - {selectedDoctor.workingHourEnd.substring(0, 5)})
+                              </span>
+                            )}
+                          </Alert>
+                        )}
+                      </div>
+                    )}
+                    {!formData.doctorId && (
+                      <Form.Text className="text-muted">
+                        Seleccione un doctor y una fecha para ver horarios disponibles.
+                      </Form.Text>
+                    )}
+                  </Form.Group>
+                </Col>
+                
+                {/* Estado (solo para edición) */}
+                {isEditing && (
+                  <Col md={6} className="mb-3">
+                    <Form.Group>
+                      <Form.Label>Estado</Form.Label>
+                      <Form.Select
+                        name="status"
+                        value={formData.status}
+                        onChange={handleChange}
+                      >
+                        <option value="scheduled">Programada</option>
+                        <option value="completed">Completada</option>
+                        <option value="cancelled">Cancelada</option>
+                        <option value="no_show">No asistió</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                )}
+                
+                {/* Motivo de la cita */}
+                <Col md={12} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Motivo de la cita</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      name="reason"
+                      value={formData.reason}
+                      onChange={handleChange}
+                      rows={2}
+                    />
+                  </Form.Group>
+                </Col>
+                
+                {/* Notas (solo para edición) */}
+                {isEditing && (
+                  <Col md={12} className="mb-3">
+                    <Form.Group>
+                      <Form.Label>Notas clínicas</Form.Label>
+                      <Form.Control
+                        as="textarea"
+                        name="notes"
+                        value={formData.notes}
+                        onChange={handleChange}
+                        rows={3}
+                      />
+                    </Form.Group>
+                  </Col>
+                )}
+              </Row>
+              
+              {/* Información del doctor seleccionado */}
+              {selectedDoctor && selectedDoctor.workingDays && (
+                <Card className="mb-4">
+                  <Card.Header className="bg-light">
+                    <h5 className="mb-0">Información del Doctor</h5>
+                  </Card.Header>
+                  <Card.Body>
+                    <Row>
+                      <Col md={12}>
+                        <h6>{selectedDoctor.user?.fullName || `Doctor ID: ${selectedDoctor.id}`}</h6>
+                        <p className="mb-1"><strong>Especialidad:</strong> {selectedDoctor.specialty?.name || 'No definida'}</p>
+                        <p className="mb-1"><strong>Sector:</strong> {selectedDoctor.sector?.name || 'No definido'}</p>
+                        <p className="mb-1"><strong>Duración de consulta:</strong> {selectedDoctor.appointmentDuration || 'No definido'} minutos</p>
+                        <p className="mb-1">
+                          <strong>Horario:</strong> {selectedDoctor.workingHourStart?.substring(0, 5) || '--:--'} a {selectedDoctor.workingHourEnd?.substring(0, 5) || '--:--'}
+                        </p>
+                        <p className="mb-1">
+                          <strong>Días laborables:</strong>
+                        </p>
+                        <div className="mb-2">
+                          {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map((dayName, index) => {
+                            // Convertir índice 0-6 a formato 1-7 (donde 0->Lunes, 6->Domingo)
+                            const dayNum = index + 1 === 7 ? 7 : (index + 1) % 7;
+                            const isWorkingDay = selectedDoctor.workingDays && 
+                              selectedDoctor.workingDays.some(day => {
+                                const workDay = typeof day === 'string' ? parseInt(day) : day;
+                                return workDay === dayNum;
+                              });
+                                
+                            return (
+                              <Badge 
+                                key={dayNum} 
+                                bg={isWorkingDay ? "success" : "secondary"}
+                                className="me-2 mb-1"
+                                style={{ opacity: isWorkingDay ? 1 : 0.5 }}
+                              >
+                                {dayName}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              )}
+                {/* Información de depuración */}
+              {debugInfo && (
+                <Alert variant="info" className="mt-3 mb-3 small">
+                  <h6>Información de depuración:</h6>
+                  {debugInfo.workingHours && (
+                    <p className="mb-1">Horario del doctor: {debugInfo.workingHours.start} - {debugInfo.workingHours.end} (duración: {debugInfo.workingHours.duration} min)</p>
+                  )}
+                  {debugInfo.appointments !== undefined && (
+                    <p className="mb-1">Citas existentes: {debugInfo.appointments}</p>
+                  )}
+                  {debugInfo.reason && (
+                    <p className="mb-1">Razón de no disponibilidad: {debugInfo.reason}</p>
+                  )}
+                  {debugInfo.workingInfo && (
+                    <>
+                      <p className="mb-1">Días laborables: {JSON.stringify(debugInfo.workingInfo.workingDays)}</p>
+                      <p className="mb-1">Tiene horario configurado: {debugInfo.workingInfo.hasWorkingHours ? 'Sí' : 'No'}</p>
+                    </>
+                  )}
+                </Alert>
+              )}
+              
+              {/* Botones de acción */}
+              <div className="d-flex justify-content-end gap-2">
+                <Button
+                  variant="outline-secondary"
+                  onClick={() => navigate('/appointments')}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <Spinner
+                        as="span"
+                        animation="border"
+                        size="sm"
+                        role="status"
+                        aria-hidden="true"
+                        className="me-2"
+                      />
+                      Guardando...
+                    </>
+                  ) : (
+                    isEditing ? 'Actualizar Cita' : 'Crear Cita'
+                  )}
+                </Button>
+              </div>
+            </Form>
+          )}
         </Card.Body>
       </Card>
     </Container>
