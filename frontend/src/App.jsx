@@ -36,6 +36,9 @@ import PatientForm from './pages/patients/PatientForm';
 import Appointments from './pages/appointments/Appointments';
 import AppointmentForm from './pages/appointments/AppointmentForm';
 
+// Tickets Pages
+import Tickets from './pages/tickets/Tickets';
+
 // Protect routes based on auth status and role
 const PrivateRoute = ({ children, roles = [] }) => {
   const { isAuthenticated, user, loading } = useContext(AuthContext);
@@ -189,6 +192,13 @@ function App() {
             </PrivateRoute>
           } />
         </Route>
+
+        {/* Tickets Route */}
+        <Route path="tickets" element={
+          <PrivateRoute roles={['admin', 'sector_admin']}>
+            <Tickets />
+          </PrivateRoute>
+        } />
 
         {/* Catch all route */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

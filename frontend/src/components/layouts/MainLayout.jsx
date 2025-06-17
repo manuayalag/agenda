@@ -39,6 +39,14 @@ const MainLayout = () => {
                 Citas
               </Nav.Link>
               
+              <Nav.Link 
+                as={Link} 
+                to="/tickets"
+                active={location.pathname.startsWith('/tickets')}
+              >
+                Tickets
+              </Nav.Link>
+              
               {isSectorAdmin && (
                 <>
                   <Nav.Link 
