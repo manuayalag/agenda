@@ -17,24 +17,33 @@ exports.getAll = async (req, res) => {
   try {
     // Obtener usuario autenticado
     const user = await User.findByPk(req.userId);
-    if (!user) return res.status(401).json({ error: 'Usuario no autenticado' });
+    if (!user) {
+      console.log('[TICKETS] Usuario no autenticado');
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+    console.log(`[TICKETS] Usuario autenticado: id=${user.id}, role=${user.role}, sectorId=${user.sectorId}`);
 
     let tickets = [];
     if (user.role === 'admin') {
+      console.log('[TICKETS] Rol admin: mostrando todos los tickets');
       tickets = await Ticket.findAll({ order: [['createdAt', 'DESC']] });
     } else if (user.role === 'sector_admin') {
+      console.log(`[TICKETS] Rol sector_admin: mostrando tickets del sector ${user.sectorId}`);
       tickets = await Ticket.findAll({
         where: { sectorId: user.sectorId },
         order: [['createdAt', 'DESC']]
       });
     } else if (user.role === 'doctor') {
-      // Doctor no puede ver tickets
+      console.log('[TICKETS] Rol doctor: no puede ver tickets');
       return res.json([]);
     } else {
+      console.log(`[TICKETS] Rol desconocido: ${user.role}`);
       return res.status(403).json({ error: 'No autorizado' });
     }
+    console.log(`[TICKETS] Tickets encontrados: ${tickets.length}`);
     res.json(tickets);
   } catch (err) {
+    console.error('[TICKETS] Error al obtener tickets:', err);
     res.status(500).json({ error: err.message });
   }
 };
