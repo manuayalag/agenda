@@ -3,7 +3,17 @@ const db = require('../models');
 const User = db.User;
 
 const verifyToken = (req, res, next) => {
-  const token = req.headers['x-access-token'];
+  // Permitir tanto Authorization: Bearer ... como x-access-token
+  let token = null;
+  if (req.headers['authorization']) {
+    const authHeader = req.headers['authorization'];
+    if (authHeader.startsWith('Bearer ')) {
+      token = authHeader.slice(7); // Quita 'Bearer '
+    }
+  }
+  if (!token && req.headers['x-access-token']) {
+    token = req.headers['x-access-token'];
+  }
 
   if (!token) {
     return res.status(403).json({
