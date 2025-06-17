@@ -1,4 +1,6 @@
 const Ticket = require('../models/ticket.model');
+const db = require('../models');
+const User = db.User;
 
 // Crear ticket (POST /api/tickets)
 exports.create = async (req, res) => {
@@ -13,7 +15,24 @@ exports.create = async (req, res) => {
 // Listar tickets (GET /api/tickets)
 exports.getAll = async (req, res) => {
   try {
-    const tickets = await Ticket.findAll({ order: [['createdAt', 'DESC']] });
+    // Obtener usuario autenticado
+    const user = await User.findByPk(req.userId);
+    if (!user) return res.status(401).json({ error: 'Usuario no autenticado' });
+
+    let tickets = [];
+    if (user.role === 'admin') {
+      tickets = await Ticket.findAll({ order: [['createdAt', 'DESC']] });
+    } else if (user.role === 'sector_admin') {
+      tickets = await Ticket.findAll({
+        where: { sectorId: user.sectorId },
+        order: [['createdAt', 'DESC']]
+      });
+    } else if (user.role === 'doctor') {
+      // Doctor no puede ver tickets
+      return res.json([]);
+    } else {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
     res.json(tickets);
   } catch (err) {
     res.status(500).json({ error: err.message });
