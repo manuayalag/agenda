@@ -7,6 +7,12 @@ const User = db.User;
  */
 const seedUsers = async () => {
   try {
+    const existingUsers = await User.count();
+    if (existingUsers > 0) {
+      console.log('Usuarios ya existen, se omite creación.');
+      return true;
+    }
+
     // Admin principal del sistema
     await User.create({
       username: 'admin',

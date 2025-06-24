@@ -4,15 +4,13 @@ const express = require('express');
 const router = express.Router();
 
 // Middleware para verificación de token en todas las rutas
-router.use((req, res, next) => {
-  authJwt.verifyToken(req, res, next);
-});
+router.use(authJwt.verifyToken);
 
 // Rutas para citas
 router.post('/', controller.createAppointment);
 router.get('/', controller.getAllAppointments);
 router.get('/filtered', controller.getFilteredAppointments);
-router.get('/doctor/:doctorId', controller.getDoctorAppointments);
+router.get('/prestador/:prestadorId', controller.getPrestadorAppointments);
 router.get('/:id', controller.getAppointmentById);
 router.put('/:id', controller.updateAppointment);
 router.delete('/:id', authJwt.isAdmin, controller.deleteAppointment);

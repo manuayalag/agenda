@@ -1,6 +1,7 @@
 const db = require('../models');
 const Appointment = db.Appointment;
-const Doctor = db.Doctor;
+const Prestador = db.Prestador;
+const Servicio = db.Servicio;
 const Patient = db.Patient;
 const nodemailer = require('nodemailer');
 
@@ -51,23 +52,23 @@ exports.createAppointment = async (req, res) => {
       });
     }
     
-    // Verificar disponibilidad del doctor para ese horario
-    const doctor = await Doctor.findByPk(req.body.doctorId);
+    // Verificar disponibilidad del prestador para ese horario
+    const prestador = await Prestador.findByPk(req.body.prestadorId);
     
-    if (!doctor) {
+    if (!prestador) {
       return res.status(404).json({
-        message: 'Doctor no encontrado'
+        message: 'Prestador no encontrado'
       });
     }
     
-    // Verificar si el horario está dentro del horario de trabajo del doctor
+    // Verificar si el horario está dentro del horario de trabajo del prestador
     const appointmentDate = req.body.date;
     const startTime = req.body.startTime;
     const endTime = req.body.endTime;
       // Comprobar que no se solape con otras citas
     const existingAppointments = await Appointment.findAll({
       where: {
-        doctorId: req.body.doctorId,
+        prestadorId: req.body.prestadorId,
         date: appointmentDate,
         status: {
           [db.Sequelize.Op.ne]: 'cancelled'
@@ -111,13 +112,29 @@ exports.createAppointment = async (req, res) => {
         message: `El horario seleccionado se solapa con otra cita (${overlappingAppointment.startTime} - ${overlappingAppointment.endTime})`
       });
     }
-      // Crear la cita
+      // Obtener IDs
+    const prestadorId = req.body.prestadorId;
+    const servicioId = req.body.servicioId;
+    
+    // Validar servicio
+    const servicio = await Servicio.findByPk(servicioId);
+    if (!servicio) {
+      return res.status(404).json({ message: 'Servicio no encontrado' });
+    }
+    // Calcular endTime sumando minutos del servicio a startTime
+    const startTimeStr = req.body.startTime;
+    const [h, m] = startTimeStr.split(':').map(Number);
+    const startDateObj = new Date(0, 0, 0, h, m);
+    const endDateObj = new Date(startDateObj.getTime() + servicio.tiempo * 60000);
+    const endTimeStr = endDateObj.toTimeString().slice(0, 5);
+    // Crear la cita
     const appointment = await Appointment.create({
-      doctorId: req.body.doctorId,
+      prestadorId,
+      servicioId,
       patientId: patientId, // Usar el ID del paciente que determinamos arriba
       date: appointmentDate,
-      startTime: startTime,
-      endTime: endTime,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
       reason: req.body.reason,
       notes: req.body.notes,
       status: req.body.status || 'scheduled',
@@ -129,7 +146,7 @@ exports.createAppointment = async (req, res) => {
       
       if (patientComplete && patientComplete.email && process.env.NODE_ENV !== 'test') {
         try {
-          await sendAppointmentNotification(appointment, patientComplete, doctor);
+          await sendAppointmentNotification(appointment, patientComplete, prestador);
           console.log(`Notificación de cita enviada a ${patientComplete.email}`);
         } catch (mailSendError) {
           console.error('Error al enviar el correo:', mailSendError);
@@ -160,8 +177,8 @@ exports.getAllAppointments = async (req, res) => {
     const appointments = await Appointment.findAll({
       include: [
         {
-          model: db.Doctor,
-          as: 'doctor',
+          model: db.Prestador,
+          as: 'prestador',
           include: [
             { model: db.Specialty, as: 'specialty' },
             { model: db.User, as: 'user', attributes: ['fullName'] }
@@ -170,6 +187,11 @@ exports.getAllAppointments = async (req, res) => {
         {
           model: db.Patient,
           as: 'patient'
+        },
+        {
+          model: db.Servicio,
+          as: 'servicio',
+          attributes: ['id', 'nombre_servicio', 'precio', 'tiempo']
         }
       ],
       order: [['date', 'DESC'], ['startTime', 'ASC']]
@@ -186,7 +208,7 @@ exports.getAllAppointments = async (req, res) => {
 // Obtener citas filtradas por sector y fecha
 exports.getFilteredAppointments = async (req, res) => {
   try {
-    const { sectorId, startDate, endDate, status, page = 1, limit = 10, doctorId } = req.query;
+    const { sectorId, startDate, endDate, status, page = 1, limit = 10, prestadorId } = req.query;
     
     // Convertir a números para paginación
     const pageNum = parseInt(page) || 1;
@@ -201,19 +223,19 @@ exports.getFilteredAppointments = async (req, res) => {
     
     // Dependiendo del rol, aplicamos lógica diferente
     const where = {};
-    const doctorWhere = {};
+    const prestadorWhere = {};
     
-    // Si es doctor, solo mostrar sus propias citas
-    if (user.role === 'doctor') {
-      const doctor = await db.Doctor.findOne({ where: { userId: user.id } });
-      if (doctor) {
-        return exports.getDoctorAppointments({ 
+    // Si es prestador, solo mostrar sus propias citas
+    if (user.role === 'prestador') {
+      const prestador = await db.Prestador.findOne({ where: { userId: user.id } });
+      if (prestador) {
+        return exports.getPrestadorAppointments({ 
           ...req, 
-          params: { doctorId: doctor.id }, 
-          doctorId: doctor.id
+          params: { prestadorId: prestador.id }, 
+          prestadorId: prestador.id
         }, res);
       } else {
-        // Si no tiene asociación con doctor, devolver array vacío
+        // Si no tiene asociación con prestador, devolver array vacío
         return res.status(200).json({
           data: [],
           pagination: {
@@ -226,16 +248,16 @@ exports.getFilteredAppointments = async (req, res) => {
       }
     }
     
-    // Filtrar por doctor específico si se proporciona
-    if (doctorId) {
-      where.doctorId = doctorId;
+    // Filtrar por prestador específico si se proporciona
+    if (prestadorId) {
+      where.prestadorId = prestadorId;
     }
     
     // Filtrar por sector si se proporciona o basado en rol de admin de sector
     if (sectorId) {
-      doctorWhere.sectorId = sectorId;
+      prestadorWhere.sectorId = sectorId;
     } else if (user.role === 'sector_admin' && user.sectorId) {
-      doctorWhere.sectorId = user.sectorId;
+      prestadorWhere.sectorId = user.sectorId;
     }
     
     // Filtrar por rango de fechas
@@ -261,10 +283,10 @@ exports.getFilteredAppointments = async (req, res) => {
       where: where,
       include: [
         {
-          model: db.Doctor,
-          as: 'doctor',
-          where: Object.keys(doctorWhere).length ? doctorWhere : null,
-          required: Object.keys(doctorWhere).length > 0
+          model: db.Prestador,
+          as: 'prestador',
+          where: Object.keys(prestadorWhere).length ? prestadorWhere : null,
+          required: Object.keys(prestadorWhere).length > 0
         }
       ]
     });
@@ -274,10 +296,10 @@ exports.getFilteredAppointments = async (req, res) => {
       where: where,
       include: [
         {
-          model: db.Doctor,
-          as: 'doctor',
-          where: Object.keys(doctorWhere).length ? doctorWhere : null,
-          required: Object.keys(doctorWhere).length > 0,
+          model: db.Prestador,
+          as: 'prestador',
+          where: Object.keys(prestadorWhere).length ? prestadorWhere : null,
+          required: Object.keys(prestadorWhere).length > 0,
           include: [
             { model: db.Specialty, as: 'specialty' },
             { model: db.User, as: 'user', attributes: ['fullName'] },
@@ -287,6 +309,11 @@ exports.getFilteredAppointments = async (req, res) => {
         {
           model: db.Patient,
           as: 'patient'
+        },
+        {
+          model: db.Servicio,
+          as: 'servicio',
+          attributes: ['id', 'nombre_servicio', 'precio', 'tiempo']
         }
       ],
       order: [['date', 'DESC'], ['startTime', 'ASC']],
@@ -314,10 +341,10 @@ exports.getFilteredAppointments = async (req, res) => {
   }
 };
 
-// Obtener citas de un doctor
-exports.getDoctorAppointments = async (req, res) => {
+// Obtener citas de un prestador
+exports.getPrestadorAppointments = async (req, res) => {
   try {
-    const doctorId = req.params.doctorId || req.doctorId;
+    const prestadorId = req.params.prestadorId || req.prestadorId;
     const { startDate, endDate, status, page = 1, limit = 10 } = req.query;
     
     // Convertir a números para paginación
@@ -326,7 +353,7 @@ exports.getDoctorAppointments = async (req, res) => {
     const offset = (pageNum - 1) * limitNum;
     
     const where = {
-      doctorId: doctorId
+      prestadorId: prestadorId
     };
     
     // Filtrar por rango de fechas
@@ -363,12 +390,17 @@ exports.getDoctorAppointments = async (req, res) => {
           as: 'patient'
         },
         {
-          model: db.Doctor,
-          as: 'doctor',
+          model: db.Prestador,
+          as: 'prestador',
           include: [
             { model: db.Specialty, as: 'specialty' },
             { model: db.User, as: 'user', attributes: ['fullName'] }
           ]
+        },
+        {
+          model: db.Servicio,
+          as: 'servicio',
+          attributes: ['id', 'nombre_servicio', 'precio', 'tiempo']
         }
       ],
       order: [['date', 'DESC'], ['startTime', 'ASC']],
@@ -402,8 +434,8 @@ exports.getAppointmentById = async (req, res) => {
     const appointment = await Appointment.findByPk(req.params.id, {
       include: [
         {
-          model: db.Doctor,
-          as: 'doctor',
+          model: db.Prestador,
+          as: 'prestador',
           include: [
             { model: db.Specialty, as: 'specialty' },
             { model: db.User, as: 'user', attributes: ['fullName'] }
@@ -412,6 +444,11 @@ exports.getAppointmentById = async (req, res) => {
         {
           model: db.Patient,
           as: 'patient'
+        },
+        {
+          model: db.Servicio,
+          as: 'servicio',
+          attributes: ['id', 'nombre_servicio', 'precio', 'tiempo']
         }
       ]
     });
@@ -441,19 +478,19 @@ exports.updateAppointment = async (req, res) => {
         message: 'Cita no encontrada'
       });
     }
-      // Si se cambia la fecha/hora o el doctor, verificar disponibilidad
-    if (req.body.date || req.body.startTime || req.body.endTime || req.body.doctorId) {
+      // Si se cambia la fecha/hora o el prestador, verificar disponibilidad
+    if (req.body.date || req.body.startTime || req.body.endTime || req.body.prestadorId) {
       const date = req.body.date || appointment.date;
       const startTime = req.body.startTime || appointment.startTime;
       const endTime = req.body.endTime || appointment.endTime;
-      const doctorId = req.body.doctorId || appointment.doctorId;
+      const prestadorId = req.body.prestadorId || appointment.prestadorId;
         // Comprobar que no se solape con otras citas
       const existingAppointments = await Appointment.findAll({
         where: {
           id: {
             [db.Sequelize.Op.ne]: appointmentId
           },
-          doctorId: doctorId,
+          prestadorId: prestadorId,
           date: date,
           status: {
             [db.Sequelize.Op.ne]: 'cancelled'
@@ -503,7 +540,7 @@ exports.updateAppointment = async (req, res) => {
       date: req.body.date || appointment.date,
       startTime: req.body.startTime || appointment.startTime,
       endTime: req.body.endTime || appointment.endTime,
-      doctorId: req.body.doctorId || appointment.doctorId,
+      prestadorId: req.body.prestadorId || appointment.prestadorId,
       patientId: req.body.patientId || appointment.patientId,
       status: req.body.status || appointment.status,
       reason: req.body.reason || appointment.reason,
@@ -516,13 +553,13 @@ exports.updateAppointment = async (req, res) => {
     // Si se cambió el estado a 'cancelled', enviar notificación
     if (req.body.status === 'cancelled' && appointment.status !== 'cancelled') {
       const patient = await Patient.findByPk(appointment.patientId);
-      const doctor = await Doctor.findByPk(appointment.doctorId, {
+      const prestador = await Prestador.findByPk(appointment.prestadorId, {
         include: [{ model: db.User, as: 'user' }]
       });
       
       if (patient && patient.email && process.env.NODE_ENV !== 'test') {
         try {
-          await sendCancellationNotification(appointment, patient, doctor);
+          await sendCancellationNotification(appointment, patient, prestador);
         } catch (mailError) {
           console.error('Error al enviar correo de cancelación:', mailError);
         }
@@ -564,7 +601,7 @@ exports.deleteAppointment = async (req, res) => {
 };
 
 // Función para enviar notificación por correo
-const sendAppointmentNotification = async (appointment, patient, doctor) => {
+const sendAppointmentNotification = async (appointment, patient, prestador) => {
   // Verificar que tenemos información válida del paciente
   if (!patient || !patient.email) {
     console.log('No se puede enviar notificación: paciente o email no definidos');
@@ -586,16 +623,16 @@ const sendAppointmentNotification = async (appointment, patient, doctor) => {
     }
   });
   
-  // Obtener información del doctor
-  const doctorData = await Doctor.findByPk(appointment.doctorId, {
+  // Obtener información del prestador
+  const prestadorData = await Prestador.findByPk(appointment.prestadorId, {
     include: [
       { model: db.User, as: 'user' },
       { model: db.Specialty, as: 'specialty' }
     ]
   });
-    // Verificar que la información del doctor es válida
-  if (!doctorData || !doctorData.user || !doctorData.specialty) {
-    console.log('No se puede enviar notificación: información del doctor incompleta');
+    // Verificar que la información del prestador es válida
+  if (!prestadorData || !prestadorData.user || !prestadorData.specialty) {
+    console.log('No se puede enviar notificación: información del prestador incompleta');
     return;
   }
   
@@ -609,8 +646,8 @@ const sendAppointmentNotification = async (appointment, patient, doctor) => {
       <p>Estimado/a ${patient.fullName || 'Paciente'},</p>
       <p>Le confirmamos que su cita ha sido programada con éxito:</p>
       <ul>
-        <li><strong>Doctor:</strong> ${doctorData.user.fullName}</li>
-        <li><strong>Especialidad:</strong> ${doctorData.specialty.name}</li>
+        <li><strong>Prestador:</strong> ${prestadorData.user.fullName}</li>
+        <li><strong>Especialidad:</strong> ${prestadorData.specialty.name}</li>
         <li><strong>Fecha:</strong> ${appointment.date}</li>
         <li><strong>Hora:</strong> ${appointment.startTime}</li>
       </ul>
@@ -626,7 +663,7 @@ const sendAppointmentNotification = async (appointment, patient, doctor) => {
 };
 
 // Función para enviar notificación de cancelación por correo
-const sendCancellationNotification = async (appointment, patient, doctor) => {
+const sendCancellationNotification = async (appointment, patient, prestador) => {
   // Verificar que tenemos información válida del paciente
   if (!patient || !patient.email) {
     console.log('No se puede enviar notificación de cancelación: paciente o email no definidos');
@@ -647,9 +684,9 @@ const sendCancellationNotification = async (appointment, patient, doctor) => {
       pass: process.env.EMAIL_PASSWORD
     }
   });
-    // Verificar que la información del doctor es válida
-  if (!doctor || !doctor.user) {
-    console.log('No se puede enviar notificación de cancelación: información del doctor incompleta');
+    // Verificar que la información del prestador es válida
+  if (!prestador || !prestador.user) {
+    console.log('No se puede enviar notificación de cancelación: información del prestador incompleta');
     return;
   }
   
@@ -663,7 +700,7 @@ const sendCancellationNotification = async (appointment, patient, doctor) => {
       <p>Estimado/a ${patient.fullName || 'Paciente'},</p>
       <p>Le informamos que su cita ha sido cancelada:</p>
       <ul>
-        <li><strong>Doctor:</strong> ${doctor.user.fullName}</li>
+        <li><strong>Prestador:</strong> ${prestador.user.fullName}</li>
         <li><strong>Fecha:</strong> ${appointment.date}</li>
         <li><strong>Hora:</strong> ${appointment.startTime}</li>
       </ul>

@@ -22,6 +22,8 @@ const patientRoutes = require('./src/routes/patient.routes');
 const sectorRoutes = require('./src/routes/sector.routes');
 const specialtyRoutes = require('./src/routes/specialty.routes');
 const ticketRoutes = require('./src/routes/ticket.routes');
+const servicioRoutes = require('./src/routes/servicio.routes');
+const prestadorRoutes = require('./src/routes/prestador.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -31,6 +33,8 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/specialties', specialtyRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/servicios', servicioRoutes);
+app.use('/api/prestadores', prestadorRoutes);
 
 // Ruta base
 app.get('/', (req, res) => {

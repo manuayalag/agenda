@@ -1,7 +1,8 @@
 const db = require('../models');
-const Doctor = db.Doctor;
+const Prestador = db.Prestador;
 const User = db.User;
 const Appointment = db.Appointment;
+const PrestadorHorario = db.PrestadorHorario;
 const { Op } = require('sequelize');
 
 // Función de utilidad para verificar fechas y días de la semana
@@ -20,8 +21,8 @@ const testDateDay = (dateString) => {
   return convertedDay;
 };
 
-// Obtener todos los doctores
-exports.getAllDoctors = async (req, res) => {
+// Obtener todos los prestadores
+exports.getAllPrestadores = async (req, res) => {
   try {
     // Verificar usuario actual para aplicar filtros según el rol
     const currentUser = await db.User.findByPk(req.userId);
@@ -47,23 +48,23 @@ exports.getAllDoctors = async (req, res) => {
       findOptions.where = { sectorId: currentUser.sectorId };
     }
     
-    const doctors = await Doctor.findAll(findOptions);
+    const prestadores = await Prestador.findAll(findOptions);
     
-    res.status(200).json(doctors);
+    res.status(200).json(prestadores);
   } catch (error) {
-    console.error('Error al obtener doctores:', error);
+    console.error('Error al obtener prestadores:', error);
     res.status(500).json({
-      message: error.message || 'Error al obtener la lista de doctores'
+      message: error.message || 'Error al obtener la lista de prestadores'
     });
   }
 };
 
-// Obtener doctores por sector
-exports.getDoctorsBySector = async (req, res) => {
+// Obtener prestadores por sector
+exports.getPrestadoresBySector = async (req, res) => {
   try {
     const sectorId = req.params.sectorId || req.userSectorId;
     
-    const doctors = await Doctor.findAll({
+    const prestadores = await Prestador.findAll({
       where: { sectorId: sectorId },
       include: [
         { 
@@ -76,7 +77,7 @@ exports.getDoctorsBySector = async (req, res) => {
       ]
     });
     
-    res.status(200).json(doctors);
+    res.status(200).json(prestadores);
   } catch (error) {
     res.status(500).json({
       message: error.message
@@ -84,10 +85,10 @@ exports.getDoctorsBySector = async (req, res) => {
   }
 };
 
-// Obtener doctor por ID
-exports.getDoctorById = async (req, res) => {
+// Obtener prestador por ID
+exports.getPrestadorById = async (req, res) => {
   try {
-    const doctor = await Doctor.findByPk(req.params.id, {
+    const prestador = await Prestador.findByPk(req.params.id, {
       include: [
         { 
           model: db.User,
@@ -99,13 +100,13 @@ exports.getDoctorById = async (req, res) => {
       ]
     });
     
-    if (!doctor) {
+    if (!prestador) {
       return res.status(404).json({
-        message: 'Doctor no encontrado'
+        message: 'Prestador no encontrado'
       });
     }
     
-    res.status(200).json(doctor);
+    res.status(200).json(prestador);
   } catch (error) {
     res.status(500).json({
       message: error.message
@@ -113,34 +114,34 @@ exports.getDoctorById = async (req, res) => {
   }
 };
 
-// Actualizar doctor
-exports.updateDoctor = async (req, res) => {
+// Actualizar prestador
+exports.updatePrestador = async (req, res) => {
   try {
-    const doctorId = req.params.id;
-    const doctor = await Doctor.findByPk(doctorId);
+    const prestadorId = req.params.id;
+    const prestador = await Prestador.findByPk(prestadorId);
     
-    if (!doctor) {
+    if (!prestador) {
       return res.status(404).json({
-        message: 'Doctor no encontrado'
+        message: 'Prestador no encontrado'
       });
     }
     
-    const doctorData = {
-      specialtyId: req.body.specialtyId || doctor.specialtyId,
-      sectorId: req.body.sectorId || doctor.sectorId,
-      licenseNumber: req.body.licenseNumber || doctor.licenseNumber,
-      workingDays: req.body.workingDays || doctor.workingDays,
-      workingHourStart: req.body.workingHourStart || doctor.workingHourStart,
-      workingHourEnd: req.body.workingHourEnd || doctor.workingHourEnd,
-      appointmentDuration: req.body.appointmentDuration || doctor.appointmentDuration,
-      active: req.body.active !== undefined ? req.body.active : doctor.active
+    const prestadorData = {
+      specialtyId: req.body.specialtyId || prestador.specialtyId,
+      sectorId: req.body.sectorId || prestador.sectorId,
+      licenseNumber: req.body.licenseNumber || prestador.licenseNumber,
+      workingDays: req.body.workingDays || prestador.workingDays,
+      workingHourStart: req.body.workingHourStart || prestador.workingHourStart,
+      workingHourEnd: req.body.workingHourEnd || prestador.workingHourEnd,
+      appointmentDuration: req.body.appointmentDuration || prestador.appointmentDuration,
+      active: req.body.active !== undefined ? req.body.active : prestador.active
     };
     
-    await doctor.update(doctorData);
+    await prestador.update(prestadorData);
     
     // Si hay información del usuario, actualizar también
     if (req.body.user) {
-      const user = await User.findByPk(doctor.userId);
+      const user = await User.findByPk(prestador.userId);
       
       if (user) {
         const userData = {
@@ -154,7 +155,7 @@ exports.updateDoctor = async (req, res) => {
     }
     
     res.status(200).json({
-      message: 'Doctor actualizado exitosamente'
+      message: 'Prestador actualizado exitosamente'
     });
   } catch (error) {
     res.status(500).json({
@@ -163,10 +164,10 @@ exports.updateDoctor = async (req, res) => {
   }
 };
 
-// Obtener disponibilidad del doctor para una fecha específica
-exports.getDoctorAvailability = async (req, res) => {
+// Obtener disponibilidad del prestador para una fecha específica
+exports.getPrestadorAvailability = async (req, res) => {
   try {
-    const doctorId = req.params.id;
+    const prestadorId = req.params.id;
     const date = req.query.date;
 
     if (!date) {
@@ -175,14 +176,14 @@ exports.getDoctorAvailability = async (req, res) => {
       });
     }
 
-    // Obtener información del doctor
-    const doctor = await Doctor.findByPk(doctorId);
-    if (!doctor) {
+    // Obtener información del prestador
+    const prestador = await Prestador.findByPk(prestadorId);
+    if (!prestador) {
       return res.status(404).json({
-        message: 'Doctor no encontrado'
+        message: 'Prestador no encontrado'
       });
-    }    // Verificar si la fecha es un día laborable para el doctor
-    console.log('Verificando disponibilidad para doctor:', doctor.id);
+    }    // Verificar si la fecha es un día laborable para el prestador
+    console.log('Verificando disponibilidad para prestador:', prestador.id);
     console.log('Fecha solicitada:', date);
     
     // Test específico para los días que mencionaste
@@ -201,10 +202,10 @@ exports.getDoctorAvailability = async (req, res) => {
     console.log('Día de la semana JavaScript getDay():', requestDay);
     console.log('Día de la semana convertido (1-7):', dayNumber);
     console.log('Nombre del día:', ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][requestDay]);
-    console.log('Días laborables del doctor:', doctor.workingDays);
+    console.log('Días laborables del prestador:', prestador.workingDays);
       // Convertir workingDays a números para asegurar una comparación correcta
-    const workingDaysNumbers = doctor.workingDays ? 
-      doctor.workingDays.map(day => typeof day === 'string' ? parseInt(day) : day) : 
+    const workingDaysNumbers = prestador.workingDays ? 
+      prestador.workingDays.map(day => typeof day === 'string' ? parseInt(day) : day) : 
       [];
     
     console.log('Días laborables (como números):', workingDaysNumbers);
@@ -212,187 +213,160 @@ exports.getDoctorAvailability = async (req, res) => {
     // Corregir la verificación del día:
     // JS: 0(Dom), 1(Lun), 2(Mar), 3(Mié), 4(Jue), 5(Vie), 6(Sáb)
     // DB: 1(Lun), 2(Mar), 3(Mié), 4(Jue), 5(Vie), 6(Sáb), 7(Dom)
-    const isDoctorWorking = workingDaysNumbers.includes(dayNumber);
-    console.log('¿El doctor trabaja este día?', isDoctorWorking);
+    const isPrestadorWorking = workingDaysNumbers.includes(dayNumber);
+    console.log('¿El prestador trabaja este día?', isPrestadorWorking);
     
-    // Ver si el doctor trabaja ese día o tiene horario configurado
-    if (!doctor.workingDays || !isDoctorWorking || !doctor.workingHourStart || !doctor.workingHourEnd) {
-      console.log('El doctor no trabaja este día o no tiene horario configurado:',
-        !doctor.workingDays ? 'Sin días laborables' : 
-        !isDoctorWorking ? 'No trabaja este día' : 
-        !doctor.workingHourStart || !doctor.workingHourEnd ? 'Horario no configurado' : ''
-      );      const reason = !doctor.workingDays ? 'no_working_days' : 
-                    !isDoctorWorking ? 'not_working_this_day' : 
+    // Ver si el prestador trabaja ese día o tiene horario configurado
+    if (!prestador.workingDays || !isPrestadorWorking || !prestador.workingHourStart || !prestador.workingHourEnd) {
+      console.log('El prestador no trabaja este día o no tiene horario configurado:',
+        !prestador.workingDays ? 'Sin días laborables' : 
+        !isPrestadorWorking ? 'No trabaja este día' : 
+        !prestador.workingHourStart || !prestador.workingHourEnd ? 'Horario no configurado' : ''
+      );      const reason = !prestador.workingDays ? 'no_working_days' : 
+                    !isPrestadorWorking ? 'not_working_this_day' : 
                     'no_working_hours';
                     
       return res.status(200).json({
-        message: 'El doctor no trabaja este día o no tiene horario configurado',
+        message: 'El prestador no trabaja este día o no tiene horario configurado',
         reason: reason,
         availableSlots: [],
         workingInfo: {
-          hasWorkingDays: !!doctor.workingDays,
-          workingDays: doctor.workingDays || [],
-          hasWorkingHours: !!(doctor.workingHourStart && doctor.workingHourEnd),
-          workingHourStart: doctor.workingHourStart,
-          workingHourEnd: doctor.workingHourEnd
+          hasWorkingDays: !!prestador.workingDays,
+          workingDays: prestador.workingDays || [],
+          hasWorkingHours: !!(prestador.workingHourStart && prestador.workingHourEnd),
+          workingHourStart: prestador.workingHourStart,
+          workingHourEnd: prestador.workingHourEnd
         }
       });
     }
 
-    // Horario de trabajo del doctor
-    const workStartTime = doctor.workingHourStart;
-    const workEndTime = doctor.workingHourEnd;
-    const appointmentDuration = doctor.appointmentDuration || 30; // por defecto 30 min si no tiene definido    // Obtener todas las citas del doctor para esa fecha
+    // Buscar todos los rangos horarios del prestador para ese día
+    const horarios = await PrestadorHorario.findAll({
+      where: {
+        prestadorId: prestadorId,
+        dia: dayNumber,
+      },
+      order: [['hora_inicio', 'ASC']],
+    });
+
+    if (!horarios || horarios.length === 0) {
+      return res.status(200).json({
+        message: 'El prestador no tiene horarios configurados para este día',
+        reason: 'no_working_hours',
+        availableSlots: [],
+        workingInfo: { horarios: [] }
+      });
+    }
+
+    // Obtener todas las citas del prestador para esa fecha
     const appointments = await Appointment.findAll({
       where: {
-        doctorId: doctorId,
+        prestadorId: prestadorId,
         date: date,
-        status: {
-          [Op.ne]: 'cancelled' // Ignorar citas canceladas
-        }
+        status: { [Op.ne]: 'cancelled' }
       },
       order: [['startTime', 'ASC']]
     });
-    
-    console.log(`Citas existentes para doctor ${doctorId} en fecha ${date}:`, appointments.map(app => ({
-      id: app.id,
-      startTime: app.startTime,
-      endTime: app.endTime,
-      status: app.status
-    })));
 
-    // Generar slots disponibles
-    const availableSlots = [];
-    
-    // Convertir string de hora a minutos para cálculos
+    // Funciones utilitarias
     const timeToMinutes = (timeStr) => {
       const [hours, minutes] = timeStr.split(':').map(Number);
       return (hours * 60) + minutes;
     };
-    
-    // Convertir minutos a string de hora para API
     const minutesToTime = (minutes) => {
       const hours = Math.floor(minutes / 60);
       const mins = minutes % 60;
       return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:00`;
-    };    // Calcular todos los slots posibles en el horario de trabajo
-    const startMinutes = timeToMinutes(workStartTime);
-    const endMinutes = timeToMinutes(workEndTime);
-    
-    console.log('Generando slots de disponibilidad:');
-    console.log('Horario de trabajo del doctor:', workStartTime, 'a', workEndTime);
-    console.log('Duración de cita:', appointmentDuration, 'minutos');
-    console.log('Horario en minutos:', startMinutes, 'a', endMinutes);
-      // Crear slots dentro del horario de trabajo
-    console.log('Intentando generar slots para horario:', workStartTime, 'a', workEndTime, '(duración cita:', appointmentDuration, 'min)');
-    
-    // Verificar que tenemos horarios válidos antes de intentar generar slots
-    if (!workStartTime || !workEndTime || startMinutes >= endMinutes) {
-      console.warn('Horario de trabajo inválido o mal configurado:', { startMinutes, endMinutes });
-    } else {
+    };
+
+    // Duración del servicio (puedes ajustar para que venga por query si lo necesitas)
+    // Por ahora, usa la duración por defecto del prestador
+    const appointmentDuration = prestador.appointmentDuration || 30;
+
+    // Generar slots para todos los rangos
+    let availableSlots = [];
+    for (const rango of horarios) {
+      const startMinutes = timeToMinutes(rango.hora_inicio);
+      const endMinutes = timeToMinutes(rango.hora_fin);
       for (let slotStart = startMinutes; slotStart + appointmentDuration <= endMinutes; slotStart += appointmentDuration) {
         const slotEnd = slotStart + appointmentDuration;
         const slot = {
           start: minutesToTime(slotStart),
           end: minutesToTime(slotEnd)
         };
-        console.log(`Evaluando slot: ${slot.start} - ${slot.end}`);
-        
-        // Verificar si el slot está disponible (no se solapa con ninguna cita)
+        // Verificar solapamiento con citas existentes
         let isAvailable = true;
         for (const appointment of appointments) {
           const appointmentStart = timeToMinutes(appointment.startTime);
           const appointmentEnd = timeToMinutes(appointment.endTime);
-
-          // Mejor lógica de detección de solapamiento
-          // Un slot se solapa si:
-          // - El inicio del slot está entre el inicio y fin de la cita
-          // - El fin del slot está entre el inicio y fin de la cita
-          // - El slot contiene completamente a la cita
           if (
-            (slotStart >= appointmentStart && slotStart < appointmentEnd) || // inicio del slot dentro de la cita
-            (slotEnd > appointmentStart && slotEnd <= appointmentEnd) || // fin del slot dentro de la cita
-            (slotStart <= appointmentStart && slotEnd >= appointmentEnd) // slot contiene a la cita
+            (slotStart >= appointmentStart && slotStart < appointmentEnd) ||
+            (slotEnd > appointmentStart && slotEnd <= appointmentEnd) ||
+            (slotStart <= appointmentStart && slotEnd >= appointmentEnd)
           ) {
             isAvailable = false;
-            console.log(`Slot ${minutesToTime(slotStart)}-${minutesToTime(slotEnd)} se solapa con cita ${appointment.startTime}-${appointment.endTime}`);
             break;
           }
         }
-
         if (isAvailable) {
-          console.log(`Slot disponible añadido: ${slot.start} - ${slot.end}`);
           availableSlots.push(slot);
         }
       }
-    }// Verificar si se generaron slots disponibles
-    console.log('Total de slots generados:', availableSlots.length);
-    
-    // Identificar la razón por la que no hay slots disponibles
-    let noSlotsReason = null;
-    
-    if (availableSlots.length === 0) {
-      console.log('ADVERTENCIA: No se generaron slots disponibles para el doctor en esta fecha.');
-      console.log('Datos del doctor:', {
-        id: doctor.id,
-        workingDays: doctor.workingDays,
-        workingHourStart: doctor.workingHourStart,
-        workingHourEnd: doctor.workingHourEnd,
-        appointmentDuration: doctor.appointmentDuration
-      });
-      
-      // Verificar por qué no se generaron slots
-      const startMinutes = timeToMinutes(workStartTime);
-      const endMinutes = timeToMinutes(workEndTime);
-      console.log('Horario en minutos:', startMinutes, 'a', endMinutes, '(duración:', appointmentDuration, 'min)');
-      
-      // Determinar la razón por la que no hay slots disponibles
-      if (!doctor.workingHourStart || !doctor.workingHourEnd) {
-        noSlotsReason = 'no_working_hours';
-      } else if (startMinutes >= endMinutes) {
-        noSlotsReason = 'invalid_working_hours';
-      } else if (appointments.length > 0) {
-        // Comprobar si todas las horas del día están ocupadas
-        const totalTimeSlots = Math.floor((endMinutes - startMinutes) / appointmentDuration);
-        if (totalTimeSlots <= appointments.length) {
-          noSlotsReason = 'all_slots_booked';
-        } else {
-          // Si hay más slots posibles que citas, pero aún no hay disponibles,
-          // probablemente es por la fragmentación del horario
-          noSlotsReason = 'fragmented_schedule';
-        }
-      } else {
-        noSlotsReason = 'unknown';
-      }
-      
-      console.log('Razón por la que no hay slots disponibles:', noSlotsReason);
     }
-    
-    // Devolver los slots disponibles
+
     return res.status(200).json({
-      doctor: doctor.id,
+      prestador: prestador.id,
       date: date,
       availableSlots: availableSlots,
-      reason: noSlotsReason,
-      workingHours: {
-        start: workStartTime,
-        end: workEndTime,
-        duration: appointmentDuration
-      },
-      appointments: appointments.length,
-      workingInfo: {
-        hasWorkingDays: !!doctor.workingDays,
-        workingDays: doctor.workingDays || [],
-        hasWorkingHours: !!(doctor.workingHourStart && doctor.workingHourEnd),
-        workingHourStart: doctor.workingHourStart,
-        workingHourEnd: doctor.workingHourEnd
-      }
+      workingInfo: { horarios },
+      appointments: appointments.length
     });
 
   } catch (error) {
-    console.error('Error al obtener disponibilidad del doctor:', error);
+    console.error('Error al obtener disponibilidad del prestador:', error);
     res.status(500).json({
-      message: error.message || 'Error al obtener disponibilidad del doctor'
+      message: error.message || 'Error al obtener disponibilidad del prestador'
     });
+  }
+};
+
+// Listar horarios de un prestador
+exports.getPrestadorHorarios = async (req, res) => {
+  try {
+    const horarios = await db.PrestadorHorario.findAll({
+      where: { prestadorId: req.params.id },
+      order: [['dia', 'ASC'], ['hora_inicio', 'ASC']]
+    });
+    res.json(horarios);
+  } catch (err) {
+    res.status(500).json({ message: 'Error al obtener horarios', error: err.message });
+  }
+};
+
+// Agregar un horario a un prestador
+exports.addPrestadorHorario = async (req, res) => {
+  try {
+    const { dia, hora_inicio, hora_fin } = req.body;
+    const horario = await db.PrestadorHorario.create({
+      prestadorId: req.params.id,
+      dia,
+      hora_inicio,
+      hora_fin
+    });
+    res.json(horario);
+  } catch (err) {
+    res.status(500).json({ message: 'Error al crear horario', error: err.message });
+  }
+};
+
+// Eliminar un horario de un prestador
+exports.deletePrestadorHorario = async (req, res) => {
+  try {
+    await db.PrestadorHorario.destroy({
+      where: { id: req.params.scheduleId, prestadorId: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Error al eliminar horario', error: err.message });
   }
 };

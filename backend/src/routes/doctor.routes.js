@@ -4,15 +4,16 @@ const express = require('express');
 const router = express.Router();
 
 // Middleware para verificación de token en todas las rutas
-router.use((req, res, next) => {
-  authJwt.verifyToken(req, res, next);
-});
+router.use(authJwt.verifyToken);
 
-// Rutas para doctores
-router.get('/', controller.getAllDoctors);
-router.get('/sector/:sectorId', controller.getDoctorsBySector);
-router.get('/:id', controller.getDoctorById);
-router.put('/:id', authJwt.isAdmin, controller.updateDoctor);
-router.get('/:id/availability', controller.getDoctorAvailability);
+// Rutas para prestadores (antes doctores)
+router.get('/', controller.getAllPrestadores);
+router.get('/sector/:sectorId', controller.getPrestadoresBySector);
+router.get('/:id', controller.getPrestadorById);
+router.put('/:id', authJwt.isAdmin, controller.updatePrestador);
+router.get('/:id/availability', controller.getPrestadorAvailability);
+router.get('/:id/schedules', controller.getPrestadorHorarios);
+router.post('/:id/schedules', controller.addPrestadorHorario);
+router.delete('/:id/schedules/:scheduleId', controller.deletePrestadorHorario);
 
 module.exports = router;

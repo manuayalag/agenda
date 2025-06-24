@@ -1,10 +1,19 @@
 module.exports = (sequelize, DataTypes) => {
-  const Appointment = sequelize.define('Appointment', {    doctorId: {
+  const Appointment = sequelize.define('Appointment', {
+    prestadorId: {
       type: DataTypes.INTEGER,
       allowNull: false,
       references: {
-        model: 'doctors',
+        model: 'prestadores',
         key: 'id'
+      }
+    },
+    servicioId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'servicio',
+        key: 'id_servicio'
       }
     },
     patientId: {
@@ -42,7 +51,8 @@ module.exports = (sequelize, DataTypes) => {
     reminderSent: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
-    },    createdBy: {
+    },
+    createdBy: {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: {
@@ -64,7 +74,10 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     indexes: [
       {
-        fields: ['doctor_id']
+        fields: ['prestador_id']
+      },
+      {
+        fields: ['servicio_id']
       },
       {
         fields: ['patient_id']

@@ -8,7 +8,9 @@ const bcrypt = require('bcryptjs');
 const seedUsers = require('./user.seed');
 const seedSectors = require('./sector.seed');
 const seedSpecialties = require('./specialty.seed');
-const seedDoctors = require('./doctor.seed');
+const seedPrestadores = require('./prestador.seed');
+const seedServicios = require('./servicio.seed');
+const seedPrestadorServicios = require('./prestador_servicio.seed');
 const seedPatients = require('./patient.seed');
 const seedAppointments = require('./appointment.seed');
 
@@ -35,14 +37,23 @@ const runSeeders = async () => {
     console.log('- Creando especialidades...');
     await seedSpecialties();
     
-    console.log('- Creando doctores...');
-    await seedDoctors();
+    console.log('- Creando prestadores...');
+    await seedPrestadores();
+    
+    console.log('- Creando servicios...');
+    await seedServicios();
+    
+    console.log('- Relacionando prestadores y servicios...');
+    await seedPrestadorServicios();
     
     console.log('- Creando pacientes...');
     await seedPatients();
     
     console.log('- Creando citas...');
     await seedAppointments();
+    
+    console.log('- Creando horarios de prestadores...');
+    await require('./prestador_horario.seed')();
     
     console.log('¡Base de datos poblada exitosamente!');
     process.exit(0);

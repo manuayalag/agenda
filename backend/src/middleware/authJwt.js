@@ -93,7 +93,7 @@ const isDoctor = async (req, res, next) => {
         return res.status(404).json({ message: 'Doctor no encontrado' });
       }
       
-      req.doctorId = doctor.id;
+      req.prestadorId = doctor.id;
       next();
       return;
     }

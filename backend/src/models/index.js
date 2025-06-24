@@ -30,8 +30,12 @@ db.Patient = require('./patient.model')(sequelize, DataTypes);
 
 // Luego las tablas que dependen de otras
 db.User = require('./user.model')(sequelize, DataTypes);
-db.Doctor = require('./doctor.model')(sequelize, DataTypes);
+db.Prestador = require('./doctor.model')(sequelize, DataTypes);
 db.Appointment = require('./appointment.model')(sequelize, DataTypes);
+db.Servicio = require('./servicio.model')(sequelize, DataTypes);
+db.PrestadorServicio = require('./prestador_servicio.model')(sequelize, DataTypes);
+const PrestadorHorario = require('./prestador_horario.model')(sequelize, DataTypes);
+db.PrestadorHorario = PrestadorHorario;
 
 // Relaciones entre modelos
 // Un usuario puede ser admin o personal administrativo
@@ -46,9 +50,9 @@ db.Sector.belongsTo(db.User, {
   constraints: false  // Importante: evita que Sequelize intente crear la FK al sincronizar
 });
 
-// Un usuario doctor tiene un perfil de doctor
-db.User.hasOne(db.Doctor, { foreignKey: 'userId', as: 'doctorProfile' });
-db.Doctor.belongsTo(db.User, { foreignKey: 'userId', as: 'user' });
+// Relación User <-> Prestador (un usuario puede ser prestador)
+db.User.hasOne(db.Prestador, { foreignKey: 'userId', as: 'prestadorProfile' });
+db.Prestador.belongsTo(db.User, { foreignKey: 'userId', as: 'user' });
 
 // Un sector tiene muchos usuarios
 db.Sector.hasMany(db.User, {
@@ -62,19 +66,51 @@ db.User.belongsTo(db.Sector, {
   constraints: false  // Importante: evita que Sequelize intente crear la FK al sincronizar
 });
 
-// Un doctor pertenece a un sector y a una especialidad
-db.Sector.hasMany(db.Doctor, { foreignKey: 'sectorId', as: 'doctors' });
-db.Doctor.belongsTo(db.Sector, { foreignKey: 'sectorId', as: 'sector' });
-
-db.Specialty.hasMany(db.Doctor, { foreignKey: 'specialtyId', as: 'doctors' });
-db.Doctor.belongsTo(db.Specialty, { foreignKey: 'specialtyId', as: 'specialty' });
-
-// Un doctor tiene muchas citas, una cita pertenece a un doctor
-db.Doctor.hasMany(db.Appointment, { foreignKey: 'doctorId', as: 'appointments' });
-db.Appointment.belongsTo(db.Doctor, { foreignKey: 'doctorId', as: 'doctor' });
+// Un prestador tiene muchas citas, una cita pertenece a un prestador
+// (Solo una vez, no duplicar alias)
+db.Prestador.hasMany(db.Appointment, { foreignKey: 'prestadorId', as: 'appointments' });
+db.Appointment.belongsTo(db.Prestador, { foreignKey: 'prestadorId', as: 'prestador' });
 
 // Un paciente tiene muchas citas, una cita pertenece a un paciente
 db.Patient.hasMany(db.Appointment, { foreignKey: 'patientId', as: 'appointments' });
 db.Appointment.belongsTo(db.Patient, { foreignKey: 'patientId', as: 'patient' });
+
+// Relación muchos a muchos entre Prestador y Servicio
+// Un prestador puede tener muchos servicios y un servicio puede ser realizado por muchos prestadores
+
+db.Prestador.belongsToMany(db.Servicio, {
+  through: db.PrestadorServicio,
+  foreignKey: 'id_prestador',
+  otherKey: 'id_servicio',
+  as: 'servicios'
+});
+db.Servicio.belongsToMany(db.Prestador, {
+  through: db.PrestadorServicio,
+  foreignKey: 'id_servicio',
+  otherKey: 'id_prestador',
+  as: 'prestadores'
+});
+
+// Relación Appointment con Servicio
+// (NO DUPLICAR la relación con prestador)
+db.Appointment.belongsTo(db.Servicio, { foreignKey: 'servicioId', as: 'servicio' });
+
+// Asociación Specialty <-> Prestador
+// Un prestador pertenece a una especialidad
+// Un specialty tiene muchos prestadores
+
+db.Prestador.belongsTo(db.Specialty, { foreignKey: 'specialtyId', as: 'specialty' });
+db.Specialty.hasMany(db.Prestador, { foreignKey: 'specialtyId', as: 'prestadores' });
+
+// Asociación Sector <-> Prestador
+// Un prestador pertenece a un sector
+// Un sector tiene muchos prestadores
+
+db.Prestador.belongsTo(db.Sector, { foreignKey: 'sectorId', as: 'sector' });
+db.Sector.hasMany(db.Prestador, { foreignKey: 'sectorId', as: 'prestadores' });
+
+// Relación: Un prestador tiene muchos horarios
+db.Prestador.hasMany(db.PrestadorHorario, { foreignKey: 'prestadorId', as: 'horarios' });
+db.PrestadorHorario.belongsTo(db.Prestador, { foreignKey: 'prestadorId', as: 'prestador' });
 
 module.exports = db;

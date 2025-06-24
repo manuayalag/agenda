@@ -4,9 +4,7 @@ const express = require('express');
 const router = express.Router();
 
 // Middleware para verificación de token en todas las rutas
-router.use((req, res, next) => {
-  authJwt.verifyToken(req, res, next);
-});
+router.use(authJwt.verifyToken);
 
 // Rutas para sectores
 router.post('/', controller.createSector); // Permitimos que cualquier usuario autenticado cree sectores (por ahora)
