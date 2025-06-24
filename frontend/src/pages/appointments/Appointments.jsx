@@ -24,7 +24,7 @@ const Appointments = () => {
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
-    doctorId: '',
+    prestadorId: '',
     status: '',
     sectorId: ''
   });
@@ -102,9 +102,9 @@ const Appointments = () => {
       let response;
       console.log('Solicitando citas con parámetros:', params);
       
-      if (isDoctor && user.doctorId) {
+      if (isDoctor && user.prestadorId) {
         // Si es doctor, cargar solo sus citas
-        response = await AppointmentService.getDoctorAppointments(user.doctorId, params);
+        response = await AppointmentService.getDoctorAppointments(user.prestadorId, params);
       } else {
         // Si es admin o admin de sector, aplicar filtros
         if (isSectorAdmin && user.role === 'sector_admin' && user.sectorId) {
@@ -187,7 +187,7 @@ const Appointments = () => {
     setFilters({
       startDate: thirtyDaysAgo.toISOString().split('T')[0],
       endDate: today.toISOString().split('T')[0],
-      doctorId: '',
+      prestadorId: '',
       status: '',
       sectorId: ''
     });
@@ -432,8 +432,8 @@ const Appointments = () => {
                   <Form.Group>
                     <Form.Label>Doctor</Form.Label>
                     <Form.Select
-                      name="doctorId"
-                      value={filters.doctorId}
+                      name="prestadorId"
+                      value={filters.prestadorId}
                       onChange={handleFilterChange}
                     >
                       <option value="">Todos</option>
@@ -516,6 +516,7 @@ const Appointments = () => {
                   <tr>
                     <th>Fecha</th>
                     <th>Hora</th>
+                    <th>Servicio</th>
                     <th>Paciente</th>
                     {!isDoctor && <th>Doctor</th>}
                     {isAdmin && <th>Sector</th>}
@@ -528,6 +529,7 @@ const Appointments = () => {
                     <tr key={appointment.id}>
                       <td>{formatDate(appointment.date)}</td>
                       <td>{formatTime(appointment.startTime)} - {formatTime(appointment.endTime)}</td>
+                      <td>{appointment.servicio?.nombre_servicio || '-'}</td>
                       <td>{appointment.patient?.fullName || 'Paciente no disponible'}</td>
                       {!isDoctor && (
                         <td>
@@ -541,7 +543,8 @@ const Appointments = () => {
                           {appointment.doctor?.sector?.name || 'No asignado'}
                         </td>
                       )}
-                      <td>{getStatusBadge(appointment.status)}</td>                      <td className="text-nowrap">
+                      <td>{getStatusBadge(appointment.status)}</td>
+                      <td className="text-nowrap">
                         <div className="d-flex align-items-center">
                           <Button
                             as={Link}

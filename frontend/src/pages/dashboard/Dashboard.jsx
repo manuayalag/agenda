@@ -45,10 +45,10 @@ const Dashboard = () => {
           if (user.role === 'doctor') {
             // Para usuarios doctores, buscar sus citas específicas
             // Primero verificamos si tenemos la información del doctor
-            if (!user.doctorId) {
+            if (!user.prestadorId) {
               console.warn("Este usuario doctor no tiene un ID de doctor asociado");
             } else {
-              const response = await AppointmentService.getDoctorAppointments(user.doctorId, params);
+              const response = await AppointmentService.getDoctorAppointments(user.prestadorId, params);
               // Manejar tanto la respuesta directa como la estructura con data
               appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
             }

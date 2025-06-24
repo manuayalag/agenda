@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Card, Form, Button, Row, Col, Alert } from 'react-bootstrap';
 import api from '../../utils/api';
 import { AuthContext } from '../../context/AuthContextValue';
+import ServicioService from '../../services/ServicioService';
+import PrestadorServicioService from '../../services/PrestadorServicioService';
 
 const DoctorForm = () => {
   const { id } = useParams();
@@ -24,6 +26,8 @@ const DoctorForm = () => {
   const [sectors, setSectors] = useState([]);
   const [specialties, setSpecialties] = useState([]);
   const [users, setUsers] = useState([]);
+  const [servicios, setServicios] = useState([]);
+  const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -50,6 +54,15 @@ const DoctorForm = () => {
         const usersResponse = await api.get('/users?role=doctor&unassigned=true');
         setUsers(usersResponse.data);
 
+        // Cargar servicios
+        const serviciosResponse = await ServicioService.getAll();
+        setServicios(serviciosResponse.data);
+        // Si es edición, cargar servicios asignados
+        if (isEditMode) {
+          const serviciosPrestador = await PrestadorServicioService.getServicios(id);
+          setServiciosSeleccionados(serviciosPrestador.data.map(s => s.id_servicio));
+        }
+        
         if (isEditMode) {
           await fetchDoctorData();
         }
@@ -89,6 +102,15 @@ const DoctorForm = () => {
     });
   };
 
+  const handleServiciosChange = (e) => {
+    const value = parseInt(e.target.value);
+    setServiciosSeleccionados(prev =>
+      prev.includes(value)
+        ? prev.filter(id => id !== value)
+        : [...prev, value]
+    );
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -96,25 +118,16 @@ const DoctorForm = () => {
     setSuccess('');
 
     try {
+      let doctorId = id;
       if (isEditMode) {
         await api.put(`/doctors/${id}`, doctor);
-        setSuccess('Doctor actualizado correctamente');
       } else {
-        await api.post('/doctors', doctor);
-        setSuccess('Doctor creado correctamente');
-        setDoctor({
-          name: '',
-          email: '',
-          phone: '',
-          specialtyId: '',
-          sectorId: user.role === 'sector_admin' ? user.sectorId : '',
-          userId: '',
-          active: true,
-          notes: ''
-        });
+        const res = await api.post('/doctors', doctor);
+        doctorId = res.data.id;
       }
-      
-      // Redirigir después de un breve retraso
+      // Guardar servicios seleccionados
+      await PrestadorServicioService.addServicios(doctorId, serviciosSeleccionados);
+      setSuccess('Doctor y servicios guardados correctamente');
       setTimeout(() => {
         navigate('/doctors');
       }, 2000);
@@ -254,6 +267,22 @@ const DoctorForm = () => {
                 checked={doctor.active}
                 onChange={handleChange}
               />
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Servicios que presta</Form.Label>
+              <div>
+                {servicios.map(servicio => (
+                  <Form.Check
+                    key={servicio.id_servicio}
+                    type="checkbox"
+                    label={`${servicio.nombre_servicio} ($${servicio.precio}, ${servicio.tiempo} min)`}
+                    value={servicio.id_servicio}
+                    checked={serviciosSeleccionados.includes(servicio.id_servicio)}
+                    onChange={handleServiciosChange}
+                  />
+                ))}
+              </div>
             </Form.Group>
 
             <div className="d-flex justify-content-end gap-2">

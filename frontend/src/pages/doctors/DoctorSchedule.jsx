@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Row, Col, Alert, Table, Badge } from 'react-bootstrap';
+import { Container, Card, Form, Button, Row, Col, Alert, Table } from 'react-bootstrap';
 import api from '../../utils/api';
 
 const DoctorSchedule = () => {
@@ -15,10 +15,9 @@ const DoctorSchedule = () => {
   
   // Para el formulario de nuevo horario
   const [newSchedule, setNewSchedule] = useState({
-    dayOfWeek: '1', // 1 = Lunes
-    startTime: '08:00',
-    endTime: '16:00',
-    isAvailable: true
+    dia: '1', // 1 = Lunes
+    hora_inicio: '08:00',
+    hora_fin: '16:00',
   });
 
   const daysOfWeek = [
@@ -28,7 +27,7 @@ const DoctorSchedule = () => {
     { value: '4', label: 'Jueves' },
     { value: '5', label: 'Viernes' },
     { value: '6', label: 'Sábado' },
-    { value: '0', label: 'Domingo' }
+    { value: '7', label: 'Domingo' }
   ];
 
   useEffect(() => {
@@ -42,7 +41,6 @@ const DoctorSchedule = () => {
       const response = await api.get(`/doctors/${id}`);
       setDoctor(response.data);
     } catch (err) {
-      console.error('Error fetching doctor:', err);
       setError('Error al cargar los datos del doctor');
     } finally {
       setLoading(false);
@@ -52,11 +50,9 @@ const DoctorSchedule = () => {
   const fetchDoctorSchedules = async () => {
     try {
       setLoading(true);
-      // Nota: Esta es una ruta de ejemplo, necesitarás crear el endpoint correspondiente
       const response = await api.get(`/doctors/${id}/schedules`);
       setSchedules(response.data);
     } catch (err) {
-      console.error('Error fetching schedules:', err);
       setError('Error al cargar los horarios del doctor');
     } finally {
       setLoading(false);
@@ -64,10 +60,10 @@ const DoctorSchedule = () => {
   };
 
   const handleScheduleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value } = e.target;
     setNewSchedule({
       ...newSchedule,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: value
     });
   };
 
@@ -76,22 +72,12 @@ const DoctorSchedule = () => {
     setLoading(true);
     setError('');
     setSuccess('');
-
     try {
-      // Nota: Esta es una ruta de ejemplo, necesitarás crear el endpoint correspondiente
       const response = await api.post(`/doctors/${id}/schedules`, newSchedule);
       setSchedules([...schedules, response.data]);
       setSuccess('Horario añadido correctamente');
-      
-      // Reset form
-      setNewSchedule({
-        dayOfWeek: '1',
-        startTime: '08:00',
-        endTime: '16:00',
-        isAvailable: true
-      });
+      setNewSchedule({ dia: '1', hora_inicio: '08:00', hora_fin: '16:00' });
     } catch (err) {
-      console.error('Error adding schedule:', err);
       setError(err.response?.data?.message || 'Error al añadir el horario');
     } finally {
       setLoading(false);
@@ -101,12 +87,10 @@ const DoctorSchedule = () => {
   const handleDeleteSchedule = async (scheduleId) => {
     try {
       setLoading(true);
-      // Nota: Esta es una ruta de ejemplo, necesitarás crear el endpoint correspondiente
       await api.delete(`/doctors/${id}/schedules/${scheduleId}`);
       setSchedules(schedules.filter(schedule => schedule.id !== scheduleId));
       setSuccess('Horario eliminado correctamente');
     } catch (err) {
-      console.error('Error deleting schedule:', err);
       setError(err.response?.data?.message || 'Error al eliminar el horario');
     } finally {
       setLoading(false);
@@ -134,7 +118,7 @@ const DoctorSchedule = () => {
         <>
           <Card className="mb-4">
             <Card.Header>
-              <h2>Horarios del Doctor: {doctor.name}</h2>
+              <h2>Horarios del Doctor: {doctor.name || doctor.user?.fullName}</h2>
               <p className="text-muted mb-0">Especialidad: {doctor.specialty?.name}</p>
             </Card.Header>
             <Card.Body>
@@ -152,23 +136,15 @@ const DoctorSchedule = () => {
                       <th>Día</th>
                       <th>Hora inicio</th>
                       <th>Hora fin</th>
-                      <th>Estado</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {schedules.map(schedule => (
                       <tr key={schedule.id}>
-                        <td>{getDayName(schedule.dayOfWeek)}</td>
-                        <td>{schedule.startTime}</td>
-                        <td>{schedule.endTime}</td>
-                        <td>
-                          {schedule.isAvailable ? (
-                            <Badge bg="success">Disponible</Badge>
-                          ) : (
-                            <Badge bg="danger">No disponible</Badge>
-                          )}
-                        </td>
+                        <td>{getDayName(schedule.dia)}</td>
+                        <td>{schedule.hora_inicio}</td>
+                        <td>{schedule.hora_fin}</td>
                         <td>
                           <Button
                             variant="danger"
@@ -198,8 +174,8 @@ const DoctorSchedule = () => {
                     <Form.Group className="mb-3">
                       <Form.Label>Día de la semana</Form.Label>
                       <Form.Select
-                        name="dayOfWeek"
-                        value={newSchedule.dayOfWeek}
+                        name="dia"
+                        value={newSchedule.dia}
                         onChange={handleScheduleChange}
                         required
                       >
@@ -211,38 +187,27 @@ const DoctorSchedule = () => {
                       </Form.Select>
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
+                  <Col md={4}>
                     <Form.Group className="mb-3">
                       <Form.Label>Hora inicio</Form.Label>
                       <Form.Control
                         type="time"
-                        name="startTime"
-                        value={newSchedule.startTime}
+                        name="hora_inicio"
+                        value={newSchedule.hora_inicio}
                         onChange={handleScheduleChange}
                         required
                       />
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
+                  <Col md={4}>
                     <Form.Group className="mb-3">
                       <Form.Label>Hora fin</Form.Label>
                       <Form.Control
                         type="time"
-                        name="endTime"
-                        value={newSchedule.endTime}
+                        name="hora_fin"
+                        value={newSchedule.hora_fin}
                         onChange={handleScheduleChange}
                         required
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={2} className="d-flex align-items-end">
-                    <Form.Group className="mb-3">
-                      <Form.Check
-                        type="checkbox"
-                        label="Disponible"
-                        name="isAvailable"
-                        checked={newSchedule.isAvailable}
-                        onChange={handleScheduleChange}
                       />
                     </Form.Group>
                   </Col>

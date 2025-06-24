@@ -96,8 +96,8 @@ export const AppointmentService = {
   getFiltered: (params) => {
     return api.get('/appointments/filtered', { params });
   },
-  getDoctorAppointments: (doctorId, params) => {
-    return api.get(`/appointments/doctor/${doctorId}`, { params });
+  getDoctorAppointments: (prestadorId, params) => {
+    return api.get(`/appointments/doctor/${prestadorId}`, { params });
   },
   getById: (id) => {
     return api.get(`/appointments/${id}`);

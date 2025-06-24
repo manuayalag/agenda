@@ -23,8 +23,8 @@ const Doctors = () => {
       const endpoint = user?.role === 'sector_admin' && user?.sectorId 
         ? `/doctors?sectorId=${user.sectorId}` 
         : '/doctors';
-        
       const response = await api.get(endpoint);
+      console.log('Fetched doctors:', response.data);
       setDoctors(response.data);
       setError(null);
     } catch (err) {
@@ -102,11 +102,11 @@ const Doctors = () => {
                 doctors.map(doctor => (
                   <tr key={doctor.id}>
                     <td>{doctor.id}</td>
-                    <td>{doctor.name}</td>
+                    <td>{doctor.user?.fullName || '-'}</td>
                     <td>{doctor.specialty?.name || '-'}</td>
                     <td>{doctor.sector?.name || '-'}</td>
-                    <td>{doctor.email}</td>
-                    <td>{doctor.phone || '-'}</td>
+                    <td>{doctor.user?.email || '-'}</td>
+                    <td>{doctor.user?.phone || '-'}</td>
                     <td>
                       {doctor.active ? (
                         <Badge bg="success">Activo</Badge>

@@ -18,6 +18,7 @@ import {
   PatientService,
   SectorService,
 } from "../../utils/api";
+import PrestadorServicioService from "../../services/PrestadorServicioService";
 import { format } from "date-fns";
 
 // Se usan estilos de Bootstrap directamente para el grid de horarios
@@ -136,13 +137,14 @@ const AppointmentForm = () => {
   const [formKey, setFormKey] = useState(Date.now()); // Para forzar la recarga del formulario
   const [originalAppointment, setOriginalAppointment] = useState(null); // Almacenar la cita original
   const [debugInfo, setDebugInfo] = useState(null); // Para almacenar información de diagnóstico
+  const [servicios, setServicios] = useState([]);
 
   const [formData, setFormData] = useState({
-    doctorId: "",
+    prestadorId: "",
+    servicioId: "",
     patientId: "",
     date: "",
     startTime: "",
-    endTime: "",
     status: "scheduled",
     reason: "",
     notes: "",
@@ -170,24 +172,24 @@ const AppointmentForm = () => {
             ...appointment,
             date: formattedDate,
             startTime: appointment.startTime,
-            endTime: appointment.endTime,
-            doctorId: appointment.doctorId,
+            prestadorId: appointment.prestadorId,
             patientId: appointment.patientId,
+            servicioId: appointment.servicioId,
             sectorId:
               appointment.doctor?.sectorId ||
               (user.role === "sector_admin" ? user.sectorId : ""),
           });
 
           // Si tenemos doctor, precargarlo
-          if (appointment.doctorId) {
+          if (appointment.prestadorId) {
             const doctorResponse = await DoctorService.getById(
-              appointment.doctorId
+              appointment.prestadorId
             );
             const doctor = doctorResponse.data;
             setSelectedDoctor(doctor);
             console.log("Doctor cargado para edición:", doctor);
 
-            await loadAvailableSlots(appointment.doctorId, formattedDate);
+            await loadAvailableSlots(appointment.prestadorId, formattedDate);
           }
         }
 
@@ -204,6 +206,15 @@ const AppointmentForm = () => {
         // Cargar pacientes para búsqueda
         const patientsResponse = await PatientService.getAll();
         setPatients(patientsResponse.data);
+
+        // Cargar servicios solo si hay prestador seleccionado
+        let serviciosResponse = { data: [] };
+        console.log("Prestador ID en carga inicial:", formData.prestadorId);
+        if (formData.prestadorId) {
+          serviciosResponse = await PrestadorServicioService.getServicios(formData.prestadorId);
+          console.log("Servicios cargadosasdsadasd:", serviciosResponse.data);
+        }
+        setServicios(serviciosResponse.data);
       } catch (err) {
         setError("Error al cargar los datos. Por favor, intente nuevamente.");
         console.error(err);
@@ -237,7 +248,7 @@ const AppointmentForm = () => {
         const formattedDate = new Date(originalAppointment.date)
           .toISOString()
           .split("T")[0];
-        loadAvailableSlots(originalAppointment.doctorId, formattedDate);
+        loadAvailableSlots(originalAppointment.prestadorId, formattedDate);
       }
     }
     // En modo creación, la lógica normal ya funciona
@@ -278,208 +289,24 @@ const AppointmentForm = () => {
     }
   };
   // Cargar horarios disponibles para un doctor en una fecha específica
-  const loadAvailableSlots = async (doctorId, date) => {
+  const loadAvailableSlots = async (prestadorId, date, servicioId) => {
     try {
-      if (!doctorId || !date) {
-        console.log("Faltan parámetros para cargar disponibilidad:", {
-          doctorId,
-          date,
-        });
+      if (!prestadorId || !date) {
         setAvailableSlots([]);
         return;
       }
-
-      // Si aún no tenemos los datos del doctor, cargarlo primero
-      let doctorData = selectedDoctor;
-      if (!doctorData || doctorData.id !== parseInt(doctorId)) {
-        try {
-          const doctorResponse = await DoctorService.getById(doctorId);
-          doctorData = doctorResponse.data;
-          setSelectedDoctor(doctorData);
-        } catch (err) {
-          console.error("Error al cargar datos del doctor:", err);
-          setError("Error al cargar datos del doctor seleccionado");
-          return;
-        }
+      // Si tienes que enviar la duración del servicio, puedes buscarla aquí:
+      let duracionServicio = null;
+      if (servicioId && servicios && servicios.length > 0) {
+        const servicio = servicios.find(s => s.id === parseInt(servicioId));
+        if (servicio) duracionServicio = servicio.tiempo;
       }
-      // Verificar primero si el doctor trabaja ese día antes de hacer la solicitud
-      if (doctorData) {
-        // Asegurar el formato correcto de la fecha para validación
-
-        // Validar que la fecha tenga el formato correcto (YYYY-MM-DD)
-        let dateToCheck = date;
-        if (date && !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          // Si no está en formato correcto, intentar convertirla
-          const tempDate = new Date(date);
-          dateToCheck = `${tempDate.getFullYear()}-${String(
-            tempDate.getMonth() + 1
-          ).padStart(2, "0")}-${String(tempDate.getDate()).padStart(2, "0")}`;
-        }
-
-        // Si el doctor no tiene configurados workingDays o workingHours, mostrar advertencia
-        if (!doctorData.workingDays || doctorData.workingDays.length === 0) {
-          console.warn("El doctor no tiene días laborables configurados");
-          setError(
-            "El doctor no tiene horario configurado. Contacte al administrador."
-          );
-        }
-
-        if (!doctorData.workingHourStart || !doctorData.workingHourEnd) {
-          console.warn("El doctor no tiene horario de trabajo configurado");
-          setError(
-            "El doctor no tiene horario de trabajo configurado. Contacte al administrador."
-          );
-        }
-
-        const works = isDoctorWorkingOnDate(doctorData, dateToCheck);
-        // Si estamos editando, añadir el horario actual solo si es la misma cita
-        console.log("edit", isEditing);
-        console.log("originalAppointment", originalAppointment);
-        console.log("doctorId", doctorId);
-        console.log("date", date);
-        if (!works) {
-          setAvailableSlots([]);
-
-          if (
-            isEditing &&
-            originalAppointment &&
-            parseInt(originalAppointment.doctorId) === parseInt(doctorId) &&
-            new Date(originalAppointment.date).toISOString().split("T")[0] ===
-              date
-          ) {
-            console.log(
-              "Añadiendo horario actual para edición, aunque el doctor no trabaja este día normalmente."
-            );
-            setAvailableSlots([
-              {
-                start: originalAppointment.startTime,
-                end: originalAppointment.endTime,
-              },
-            ]);
-          }
-          return;
-        }
-      }
-      // Asegurarnos de que la fecha esté en el formato correcto para la API
-      const apiDateFormat = new Date(date).toISOString().split("T")[0];
-      console.log("Solicitando disponibilidad con fecha:", apiDateFormat);
-      const response = await DoctorService.getAvailability(
-        doctorId,
-        apiDateFormat
-      );
-      console.log("Respuesta de disponibilidad:", response.data);
-      console.log(
-        "Horarios disponibles recibidos:",
-        response.data.availableSlots ? response.data.availableSlots.length : 0
-      );
-
-      // Guardar información adicional de debug
-      if (response.data.workingInfo) {
-        console.log(
-          "Información de horario del doctor:",
-          response.data.workingInfo
-        );
-        setError(null); // Limpiar errores previos
-      }
-
-      // Guardar información de diagnóstico para mostrar mensajes específicos al usuario
-      setDebugInfo({
-        reason: response.data.reason,
-        workingHours: response.data.workingHours,
-        appointments: response.data.appointments,
-        workingInfo: response.data.workingInfo,
-      });
-
-      // Si el backend indica que hay un problema con el horario del doctor
-      if (response.data.reason) {
-        console.log(
-          "Razón por la que no hay horarios disponibles:",
-          response.data.reason
-        );
-
-        if (response.data.reason === "no_working_days") {
-          setError("El doctor no tiene días laborables configurados.");
-        } else if (response.data.reason === "no_working_hours") {
-          setError("El doctor no tiene horario de trabajo configurado.");
-        } else if (response.data.reason === "invalid_working_hours") {
-          setError(
-            "El horario de trabajo del doctor está configurado incorrectamente."
-          );
-        }
-      }
-
-      if (
-        response.data.availableSlots &&
-        Array.isArray(response.data.availableSlots)
-      ) {
-        let slots = [...response.data.availableSlots];
-        console.log("QUEEEEEEEEEEEEEEEEE", originalAppointment);
-        // Si estamos editando, incluir el horario actual de la cita en la lista de disponibles
-        if (isEditing && originalAppointment) {
-          const isCurrentAppointment =
-            parseInt(originalAppointment.doctorId) === parseInt(doctorId) &&
-            new Date(originalAppointment.date).toISOString().split("T")[0] ===
-              date;
-
-          if (isCurrentAppointment) {
-            console.log(
-              "Incluyendo el horario actual de la cita en disponibles",
-              originalAppointment
-            );
-
-            const currentSlot = {
-              start: originalAppointment.startTime,
-              end: originalAppointment.endTime,
-            };
-
-            // Verificar si el slot actual ya existe en la lista
-            const slotExists = slots.some(
-              (slot) =>
-                slot.start === currentSlot.start && slot.end === currentSlot.end
-            );
-
-            if (!slotExists) {
-              console.log(
-                "Añadiendo el horario actual porque no existe en los disponibles:",
-                currentSlot
-              );
-              slots.push({ ...currentSlot, isOriginal: true });
-              // Ordenar los slots por hora de inicio
-              slots.sort((a, b) => a.start.localeCompare(b.start));
-            } else {
-              // Si ya existe, márcalo como original
-              slots = slots.map((slot) =>
-                slot.start === currentSlot.start && slot.end === currentSlot.end
-                  ? { ...slot, isOriginal: true }
-                  : slot
-              );
-            }
-          } else {
-            console.log("No es la cita actual que estamos editando");
-            console.log(
-              "Doctor IDs:",
-              parseInt(originalAppointment.doctorId),
-              parseInt(doctorId)
-            );
-            console.log(
-              "Fechas:",
-              new Date(originalAppointment.date).toISOString().split("T")[0],
-              date
-            );
-          }
-        }
-
-        setAvailableSlots(slots);
-      } else {
-        console.warn(
-          "La respuesta no contiene availableSlots válidos:",
-          response.data
-        );
-        setAvailableSlots([]);
-      }
+      // Si tu backend soporta duración por query:
+      // const response = await DoctorService.getAvailability(prestadorId, date, duracionServicio);
+      // Si no, solo pasa prestadorId y date:
+      const response = await DoctorService.getAvailability(prestadorId, date);
+      setAvailableSlots(response.data.availableSlots || []);
     } catch (err) {
-      console.error("Error al cargar horarios disponibles:", err);
-      setError(`Error al cargar horarios: ${err.message}`);
       setAvailableSlots([]);
     }
   };
@@ -500,7 +327,7 @@ const AppointmentForm = () => {
       // Resetear doctor y horarios
       setFormData((prev) => ({
         ...prev,
-        doctorId: "",
+        prestadorId: "",
         startTime: "",
         endTime: "",
       }));
@@ -510,18 +337,18 @@ const AppointmentForm = () => {
     }
 
     // Si cambia el doctor, cargar sus datos y disponibilidad
-    if (name === "doctorId") {
-      const doctorId = parseInt(value);
+    if (name === "prestadorId") {
+      const prestadorId = parseInt(value);
 
       // Primero obtener los datos completos del doctor
       const loadDoctorData = async () => {
         try {
           // Buscar primero en los doctores cargados
-          let doctor = doctors.find((d) => d.id === doctorId);
+          let doctor = doctors.find((d) => d.id === prestadorId);
 
           // Si no lo encontramos o no tiene datos completos, cargarlo de nuevo
           if (!doctor || !doctor.workingDays) {
-            const response = await DoctorService.getById(doctorId);
+            const response = await DoctorService.getById(prestadorId);
             doctor = response.data;
           }
 
@@ -531,9 +358,9 @@ const AppointmentForm = () => {
           // Si ya hay fecha seleccionada, cargar horarios disponibles
           if (formData.date) {
             console.log(
-              `Doctor seleccionado: ${doctorId}, cargando horarios para fecha: ${formData.date}`
+              `Doctor seleccionado: ${prestadorId}, cargando horarios para fecha: ${formData.date}`
             );
-            loadAvailableSlots(doctorId, formData.date);
+            loadAvailableSlots(prestadorId, formData.date);
           }
         } catch (error) {
           console.error("Error al cargar datos del doctor:", error);
@@ -553,11 +380,11 @@ const AppointmentForm = () => {
         endTime: "",
       }));
 
-      if (formData.doctorId) {
+      if (formData.prestadorId) {
         console.log(
-          `Fecha seleccionada: ${value}, cargando horarios para doctor: ${formData.doctorId}`
+          `Fecha seleccionada: ${value}, cargando horarios para doctor: ${formData.prestadorId}`
         );
-        loadAvailableSlots(parseInt(formData.doctorId), value);
+        loadAvailableSlots(parseInt(formData.prestadorId), value);
       }
     }
 
@@ -583,11 +410,10 @@ const AppointmentForm = () => {
 
       // Validaciones básicas
       if (
-        !formData.doctorId ||
+        !formData.prestadorId ||
         !formData.patientId ||
         !formData.date ||
-        !formData.startTime ||
-        !formData.endTime
+        !formData.startTime
       ) {
         setError("Por favor, complete todos los campos obligatorios.");
         setSubmitting(false);
@@ -626,11 +452,10 @@ const AppointmentForm = () => {
 
         // Reiniciar formulario y mostrar mensaje
         setFormData({
-          doctorId: "",
+          prestadorId: "",
           patientId: "",
           date: "",
           startTime: "",
-          endTime: "",
           status: "scheduled",
           reason: "",
           notes: "",
@@ -659,10 +484,9 @@ const AppointmentForm = () => {
 
   // Siempre incluir el slot seleccionado en availableSlots si no está presente
   useEffect(() => {
-    if (formData.startTime && formData.endTime && availableSlots.length > 0) {
+    if (formData.startTime && availableSlots.length > 0) {
       const exists = availableSlots.some(
-        (slot) =>
-          slot.start === formData.startTime && slot.end === formData.endTime
+        (slot) => slot.start === formData.startTime
       );
       if (!exists) {
         setAvailableSlots((prev) => [
@@ -672,7 +496,34 @@ const AppointmentForm = () => {
       }
     }
     // eslint-disable-next-line
-  }, [formData.startTime, formData.endTime, availableSlots.length]);
+  }, [formData.startTime, availableSlots.length]);
+
+  // Cargar servicios del prestador seleccionado
+  useEffect(() => {
+    const fetchServiciosPrestador = async () => {
+      if (formData.prestadorId) {
+        try {
+          const resp = await PrestadorServicioService.getServicios(formData.prestadorId);
+          console.log("Servicios cargados:", resp.data);
+          setServicios(resp.data);
+        } catch (err) {
+          setServicios([]);
+        }
+      } else {
+        setServicios([]);
+      }
+    };
+    fetchServiciosPrestador();
+  }, [formData.prestadorId]);
+
+  // Hook para recargar horarios cuando cambia el servicio seleccionado
+  useEffect(() => {
+    // Solo recargar si hay prestador, fecha y servicio seleccionados
+    if (formData.prestadorId && formData.date && formData.servicioId) {
+      loadAvailableSlots(parseInt(formData.prestadorId), formData.date, formData.servicioId);
+    }
+    // eslint-disable-next-line
+  }, [formData.servicioId]);
 
   return (
     <Container className="py-4">
@@ -735,12 +586,12 @@ const AppointmentForm = () => {
 
                         // Si hay doctores, seleccionar el primero
                         if (specialtyDoctors.length > 0) {
-                          const selectedDoctorId =
+                          const selectedprestadorId =
                             specialtyDoctors[0].id.toString();
 
                           setFormData((prev) => ({
                             ...prev,
-                            doctorId: selectedDoctorId,
+                            prestadorId: selectedprestadorId,
                             startTime: "",
                             endTime: "",
                           }));
@@ -750,7 +601,7 @@ const AppointmentForm = () => {
                           // Cargar horarios si hay fecha
                           if (formData.date) {
                             loadAvailableSlots(
-                              parseInt(selectedDoctorId),
+                              parseInt(selectedprestadorId),
                               formData.date
                             );
                           }
@@ -773,8 +624,8 @@ const AppointmentForm = () => {
                   <Form.Group>
                     <Form.Label>Doctor</Form.Label>
                     <Form.Select
-                      name="doctorId"
-                      value={formData.doctorId}
+                      name="prestadorId"
+                      value={formData.prestadorId}
                       onChange={handleChange}
                       required
                     >
@@ -802,6 +653,36 @@ const AppointmentForm = () => {
                           </div>
                         </Alert>
                       </div>
+                    )}
+                  </Form.Group>
+                </Col>
+
+                {/* Selector de Servicio */}
+                <Col md={6} className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Servicio</Form.Label>
+                    <Form.Select
+                      name="servicioId"
+                      value={formData.servicioId || ""}
+                      onChange={handleChange}
+                      disabled={!servicios || servicios.length === 0}
+                      required
+                    >
+                      <option value="">Seleccione un servicio</option>
+                      {console.log("Servicios disponibles:", servicios)}
+                      {servicios && servicios.length > 0 ? (
+                        servicios.map((servicio) => (
+                          <option key={servicio.id} value={servicio.id}>
+                            {servicio.nombre_servicio} ({servicio.tiempo} min)
+                          </option>
+                        ))
+                      ) : null}
+                    </Form.Select>
+                    {/* Mensaje si el prestador no tiene servicios */}
+                    {formData.prestadorId && (!servicios || servicios.length === 0) && (
+                      <Alert variant="warning" className="mt-2 p-2 small">
+                        El prestador seleccionado no tiene servicios asignados.
+                      </Alert>
                     )}
                   </Form.Group>
                 </Col>
@@ -918,7 +799,6 @@ const AppointmentForm = () => {
                               const slotValue = `${slot.start}|${slot.end}`;
                               const isSelected =
                                 formData.startTime &&
-                                formData.endTime &&
                                 `${formData.startTime}|${formData.endTime}` ===
                                   slotValue;
                               // Detectar el slot original: usa originalAppointment si existe, si no, usa formData
@@ -948,10 +828,9 @@ const AppointmentForm = () => {
                                     setFormData({
                                       ...formData,
                                       startTime: start,
-                                      endTime: end,
                                     });
                                   }}
-                                  disabled={!formData.doctorId || !formData.date}
+                                  disabled={!formData.prestadorId || !formData.date}
                                 >
                                   {slot.start.substring(0, 5)} -{" "}
                                   {slot.end.substring(0, 5)}
@@ -962,7 +841,7 @@ const AppointmentForm = () => {
                               );
                             })}
                           </div>
-                          {formData.startTime && formData.endTime && (
+                          {formData.startTime && (
                             <div className="mt-2">
                               <Alert variant="info" className="py-1 px-2 mb-0">
                                 <strong>Horario seleccionado:</strong>{" "}
@@ -974,7 +853,7 @@ const AppointmentForm = () => {
                         </>
                       ) : (
                         <div className="text-muted mt-2">
-                          {formData.doctorId && formData.date ? (
+                          {formData.prestadorId && formData.date ? (
                             <p>No hay horarios disponibles</p>
                           ) : (
                             <p>Seleccione doctor y fecha para ver horarios</p>
@@ -994,7 +873,7 @@ const AppointmentForm = () => {
                         required
                       />
                     </div>
-                    {formData.doctorId && formData.date && (
+                    {formData.prestadorId && formData.date && (
                       <div className="mt-2">
                         {" "}
                         {availableSlots.length === 0 ? (
@@ -1061,7 +940,7 @@ const AppointmentForm = () => {
                         )}
                       </div>
                     )}
-                    {!formData.doctorId && (
+                    {!formData.prestadorId && (
                       <Form.Text className="text-muted">
                         Seleccione un doctor y una fecha para ver horarios
                         disponibles.
