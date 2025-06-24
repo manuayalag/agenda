@@ -1,0 +1,1021 @@
+{
+  "name": "GMAIL",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {},
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1800,
+        300
+      ],
+      "id": "dd6f54c5-4801-4da9-ac7e-fc0e71c75a78",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "context-email",
+              "name": "ContextoEmail",
+              "value": "=Dirección de correo electrónico del remitente:\n{{ $json.from.value[0].address }}\n\nAsunto del correo electrónico:\n{{ $json.subject }}\n\nCuerpo del correo electrónico:\n{{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "email-id",
+              "name": "emailId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1600,
+        300
+      ],
+      "id": "6d38e73e-85f3-4abd-89cb-85fd8fc1bb83",
+      "name": "Preparar Datos"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analiza el siguiente email y determina si contiene una factura o documento fiscal. Responde en formato JSON.\n\nContexto del email:\n{{ $json.ContextoEmail }}\n\nInstrucciones:\n- Determina si este email contiene una factura (isFactura: true/false)\n- Si es factura, identifica el tipo (tipofactura: \"electrónica\", \"física\", \"otro\")\n- Identifica el tipo de servicio si aplica (tiposervicio: \"luz\", \"agua\", \"gas\", \"internet\", \"telefonía\", \"otro\")\n- Extrae el nombre de la empresa emisora si está disponible (name_company)\n- Proporciona tu razonamiento (reasoning)",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        300
+      ],
+      "id": "a640db12-cca4-492b-a07d-f2f3f86b88f6",
+      "name": "Clasificar Email"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -1420,
+        500
+      ],
+      "id": "e6e9f740-dd08-4e92-87e9-5b374cb83fcf",
+      "name": "OpenAI Clasificador",
+      "credentials": {
+        "openAiApi": {
+          "id": "TDRt4qaqOFc8xOMb",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"isFactura\": {\n\t\t\t\"type\": \"boolean\"\n\t\t},\n\t\t\"tipofactura\": {\n\t\t\t\"type\": [\"string\", \"null\"]\n\t\t},\n\t\t\"tiposervicio\": {\n\t\t\t\"type\": [\"string\", \"null\"]\n\t\t},\n        \"reasoning\": {\n\t\t\t\"type\": \"string\"\n\t\t},\n        \"name_company\": {\n\t\t\t\"type\": [\"string\", \"null\"]\n  \t\t}\n\t},\n  \"required\": [\"isFactura\", \"reasoning\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -1220,
+        500
+      ],
+      "id": "aa724c13-3bfa-4728-a5ef-a5fc84794c97",
+      "name": "Parser Salida"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-invoice",
+              "leftValue": "={{ $json.output.isFactura }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1100,
+        300
+      ],
+      "id": "f31b7bd0-b84c-41d0-9825-cea7699879f0",
+      "name": "¿Es Factura?"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "simple": false,
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -900,
+        200
+      ],
+      "id": "51955ebd-1d36-4ca3-b5d4-4459e3b3f5ef",
+      "name": "Obtener Adjuntos",
+      "webhookId": "5c5939e8-31ca-4a71-ac84-73d45c6b3ff3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": [
+          "Label_447759164528728199"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -900,
+        400
+      ],
+      "id": "06d5a5a1-71b4-4f54-8085-3c892587d4b4",
+      "name": "Etiquetar Factura",
+      "webhookId": "2d67891a-ffab-4e84-a121-a4d9acbbb404",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        600
+      ],
+      "id": "b5650a73-6f68-435a-bee3-53537064e803",
+      "name": "No es Factura"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItem = $input.all()[0]; // obtener el item completo\nconst binary = inputItem.binary || {};\n\nconst attachments = [];\n\nfor (const key in binary) {\n  const attachment = binary[key];\n  if (attachment && attachment.fileName) {\n    const extension = attachment.fileName.split(\".\").pop().toLowerCase();\n    if (extension === \"pdf\") {\n      attachments.push({\n        key,\n        filename: attachment.fileName,\n        extension,\n        data: attachment,\n      });\n    }\n  }\n}\n\n// Solo PDFs\nlet selectedFile = null;\n\nif (attachments.length > 0) {\n  selectedFile = attachments[0]; // toma el primer PDF encontrado\n}\n\nif (selectedFile) {\n  return {\n    success: true,\n    fileName: selectedFile.filename,\n    fileType: selectedFile.extension,\n    selectedFile: selectedFile.data,\n    totalAttachments: attachments.length,\n  };\n} else {\n  return {\n    success: false,\n    error: \"No se encontraron archivos PDF adjuntos\",\n    totalAttachments: attachments.length,\n  };\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        200
+      ],
+      "id": "24ed9a7a-b949-4496-8318-ace109f79848",
+      "name": "Seleccionar Archivo",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        200
+      ],
+      "id": "70b02df7-c42c-4dcb-a8a9-c49ee9945de7",
+      "name": "¿Archivo OK?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-xml",
+              "leftValue": "={{ $json.fileType }}",
+              "rightValue": "xml",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -40,
+        20
+      ],
+      "id": "72ccab24-f899-4e0e-9326-34792a1a00d2",
+      "name": "¿Es XML?"
+    },
+    {
+      "parameters": {
+        "operation": "xml",
+        "binaryPropertyName": "=data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        480,
+        -120
+      ],
+      "id": "f8027904-5be8-49f2-be55-ce5864d90cdb",
+      "name": "Extraer XML",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        440,
+        200
+      ],
+      "id": "9cc04f8b-c00c-4045-911d-dd323679da4f",
+      "name": "Extraer PDF"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "company-name",
+              "name": "empresaRemitente",
+              "value": "={{ $('Clasificar Email').item.json.output.name_company }}",
+              "type": "string"
+            },
+            {
+              "id": "extracted-text",
+              "name": "textoExtraido",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "file-type",
+              "name": "tipoArchivo",
+              "value": "={{ $('¿Es XML?').item.json.fileType }}",
+              "type": "string"
+            },
+            {
+              "id": "file-name",
+              "name": "nombreArchivo",
+              "value": "={{ $('¿Es XML?').item.json.fileName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        100
+      ],
+      "id": "f097a44a-e709-4877-9a6a-4a9dc8f7a6fd",
+      "name": "Preparar Datos Extracción"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "context-message",
+              "name": "contextoFactura",
+              "value": "=Empresa remitente: {{ $json.empresaRemitente }}\nTipo de archivo: {{ $json.tipoArchivo }}\nNombre del archivo: {{ $json.nombreArchivo }}\n\n--- CONTENIDO DEL ARCHIVO ---\n{{ $json.textoExtraido }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        100
+      ],
+      "id": "cbde795e-484b-463a-8c76-fa0fbddc2c55",
+      "name": "Formatear Contexto"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Por favor, procesa el siguiente texto que representa una factura electrónica y extrae los datos claves según la estructura JSON solicitada. El texto es el siguiente:\n{{ $json.contextoFactura }}\nRecuerda extraer:\n\nEmpresa emisora\n\nFecha y hora de emisión (ISO 8601)\n\nFecha de vencimiento (explícita o inferida)\n\nBase imponible\n\nIVA (aplica, porcentaje, desglosado en 5% y 10%)\n\nImporte total\n\nCDC (44 dígitos, sin espacios)\n\nItems con descripción, cantidad, precio unitario, porcentaje de IVA y subtotal\n\nDevuelve únicamente el objeto JSON válido con la estructura indicada, sin texto adicional.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres un agente extractor de datos de facturas en español. A partir de un bloque de texto que representa una factura electrónica, tu tarea es determinar si realmente es una factura y extraer los siguientes campos.\n\nDevuelve exclusivamente un objeto JSON con esta estructura exacta (sin texto adicional, sin comillas en números):\n\n{\n  \"esFactura\": boolean,\n  \"empresaEmisora\": \"string\",\n  \"numeroFactura\": \"string\",\n  \"fechaYhoraDeEmision\": \"YYYY-MM-DDTHH:mm:ss\",\n  \"fechaVencimiento\": \"YYYY-MM-DD\" o null,\n  \"baseImponible\": number,\n  \"aplicaIva\": boolean,\n  \"porcentajeIVA\": number,\n  \"importeIVA\": number,\n  \"total\": number,\n  \"CDC\": \"string\" o null,\n  \"exentas\": number,\n  \"iva5\": number,\n  \"iva10\": number,\n  \"items\": [\n    {\n      \"descripcion\": \"string\",\n      \"cantidad\": number,\n      \"precioUnitario\": number,\n      \"porcentajeIVA\": number\n    }\n  ]\n}\n\n\n\nRequisitos:\n\n\"fechaYhoraDeEmision\" debe ir con T entre la fecha y hora (ISO 8601).\n\nLos números deben ir sin comillas.\n\n\"fechaVencimiento\" debe:\n\nUsar la fecha explícita si está presente en el texto.\n\nSi no está explícita, inferirla sumando el plazo indicado en días (por ejemplo, \"Pago a 30 días\") a la fecha de emisión.\n\nSi no hay fecha explícita ni plazo, debe ser null.\n\nSi algún campo no existe, usa null donde se permite.\n\nEl CDC es un numero largo de 44 numeros, ejemplo: \"01800145364002001001558522025060217729951360\" o puede estar separado cada 4 numeros, ejemplo: \"0180 0145 3640 0200 1001 5585 2202 5060 2177 2995 1360\", pero quiero que el CDC no tenga espacios en el JSON\n\nNo devuelvas explicaciones ni texto adicional, solo el objeto JSON válido.\n\nEL CDC ES LO MÁS IMPORTANTE EN LA FACTURA SON 44 NUMEROS, SI PODES ENVIAR SIN ESPACIOS MEJOR.\n\nTAMBIEN QUIERO QUE LEAS CORRECTAMENTE LOS ITEMS DE CADA FACTURA Y LO COLOQUES EN EL CAMPO ITEMS\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        100
+      ],
+      "id": "6d6fb8a2-56db-4598-b136-8f9c9005535f",
+      "name": "Extraer Datos Factura"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        300
+      ],
+      "id": "60145737-bebd-4ec2-ae0c-36c4bd252e90",
+      "name": "OpenAI Extractor",
+      "credentials": {
+        "openAiApi": {
+          "id": "TDRt4qaqOFc8xOMb",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"esFactura\": {\n      \"type\": \"boolean\"\n    },\n    \"empresaEmisora\": {\n      \"type\": \"string\"\n    },\n    \"numeroFactura\": {\n      \"type\": \"string\"\n    },\n    \"fechaYhoraDeEmision\": {\n      \"type\": \"string\"\n    },\n    \"fechaVencimiento\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"baseImponible\": {\n      \"type\": \"number\"\n    },\n    \"aplicaIva\": {\n      \"type\": \"boolean\"\n    },\n    \"porcentajeIVA\": {\n      \"type\": \"number\"\n    },\n    \"importeIVA\": {\n      \"type\": \"number\"\n    },\n    \"total\": {\n      \"type\": \"number\"\n    },\n    \"CDC\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"exentas\": {\n      \"type\": \"number\"\n    },\n    \"iva5\": {\n      \"type\": \"number\"\n    },\n    \"iva10\": {\n      \"type\": \"number\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"descripcion\": {\n            \"type\": \"string\"\n          },\n          \"cantidad\": {\n            \"type\": \"number\"\n          },\n          \"precioUnitario\": {\n            \"type\": \"number\"\n          },\n          \"porcentajeIVA\": {\n            \"type\": \"number\"\n          },\n          \"subtotal\": {\n            \"type\": \"number\"\n          }\n        }\n      }\n    }\n  },\n  \"required\": [\n    \"esFactura\", \"empresaEmisora\", \"numeroFactura\", \"fechaYhoraDeEmision\",\n    \"total\", \"items\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        300
+      ],
+      "id": "94388682-cc1e-4014-b725-9454b6b9c545",
+      "name": "Parser Factura"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fecha-emision",
+              "name": "fechaEmision",
+              "value": "={{ $json.output.fechaYhoraDeEmision }}",
+              "type": "string"
+            },
+            {
+              "id": "fecha-vencimiento",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.output.fechaVencimiento }}",
+              "type": "string"
+            },
+            {
+              "id": "numero-factura",
+              "name": "numeroFactura",
+              "value": "={{ $json.output.numeroFactura }}",
+              "type": "string"
+            },
+            {
+              "id": "empresa-emisora",
+              "name": "empresaEmisora",
+              "value": "={{ $json.output.empresaEmisora }}",
+              "type": "string"
+            },
+            {
+              "id": "base-imponible",
+              "name": "baseImponible",
+              "value": "={{ $json.output.baseImponible }}",
+              "type": "number"
+            },
+            {
+              "id": "porcentaje-iva",
+              "name": "porcentajeIVA",
+              "value": "={{ $json.output.porcentajeIVA }}",
+              "type": "number"
+            },
+            {
+              "id": "importe-iva",
+              "name": "importeIVA",
+              "value": "={{ $json.output.importeIVA }}",
+              "type": "number"
+            },
+            {
+              "id": "total",
+              "name": "total",
+              "value": "={{ $json.output.total }}",
+              "type": "number"
+            },
+            {
+              "id": "cdc",
+              "name": "CDC",
+              "value": "={{ $json.output.CDC }}",
+              "type": "string"
+            },
+            {
+              "id": "exentas",
+              "name": "exentas",
+              "value": "={{ $json.output.exentas }}",
+              "type": "number"
+            },
+            {
+              "id": "iva5",
+              "name": "iva5",
+              "value": "={{ $json.output.iva5 }}",
+              "type": "number"
+            },
+            {
+              "id": "iva10",
+              "name": "iva10",
+              "value": "={{ $json.output.iva10 }}",
+              "type": "number"
+            },
+            {
+              "id": "moneda",
+              "name": "moneda",
+              "value": "={{ $json.output.moneda }}",
+              "type": "string"
+            },
+            {
+              "id": "items-json",
+              "name": "items",
+              "value": "={{ JSON.stringify($json.output.items) }}",
+              "type": "string"
+            },
+            {
+              "id": "email-id",
+              "name": "emailId",
+              "value": "={{ $('Gmail Trigger').item.json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "proceso-timestamp",
+              "name": "fechaProceso",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1440,
+        100
+      ],
+      "id": "0646e37a-f5a9-4ae1-92ed-6640cb3d3a52",
+      "name": "Formatear Datos Finales"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ZZUr43VM_OROTjlsanbDI9IS3X4nbbZ6th5IIIY0dvg/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2071530744,
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZZUr43VM_OROTjlsanbDI9IS3X4nbbZ6th5IIIY0dvg/edit#gid=2071530744"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        1640,
+        100
+      ],
+      "id": "7181c88e-b6b8-4647-a00c-b933b066136b",
+      "name": "Guardar en Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "BWaY5H8C8nys33Nn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "cesarayala@fiuni.edu.py",
+        "subject": "=Error procesando factura de {{ $('Gmail Trigger').item.json.from.value[0].address }}",
+        "message": "=Se produjo un error al procesar la factura:\n\nError: {{ $json.error }}\nMensaje: {{ $json.message }}\n\nRevise el correo manualmente.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -180,
+        400
+      ],
+      "id": "01fbfbc4-04ad-4554-b7b7-d594d844cee9",
+      "name": "Notificar Error",
+      "webhookId": "c70accd0-9497-49b2-b0da-0742ba3c9ebe",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": [
+          "Label_4162808472737145968"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        20,
+        400
+      ],
+      "id": "a1e7ec15-a3ba-40e6-88fd-4a894f481c94",
+      "name": "Etiquetar Error",
+      "webhookId": "19f2808b-ac3e-478c-aee8-17a7124aa6e7",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": [
+          "Label_447759164528728199"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1840,
+        120
+      ],
+      "id": "3a2ddf1a-6ab7-4769-8165-b4f88db8e79f",
+      "name": "Etiquetar Procesado",
+      "webhookId": "4a3e4cd7-c971-450f-b49a-59f3137fe778",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "paIstlgYq5AQA6C2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d3e43057-678b-4ac6-9d41-c19e953d3621",
+              "leftValue": "={{ $('Gmail Trigger').item.binary }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1580,
+        700
+      ],
+      "id": "56f35fcd-5bde-4e0f-af7d-c2579600ded7",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "selectedFile.data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        340,
+        -120
+      ],
+      "id": "466ce5bd-e91e-4107-a533-9fb480701ceb",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "selectedFile.data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        280,
+        200
+      ],
+      "id": "1e8b4c99-aacb-4ee0-877d-b483beb525c6",
+      "name": "Convert to File1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos": {
+      "main": [
+        [
+          {
+            "node": "Clasificar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar Email": {
+      "main": [
+        [
+          {
+            "node": "¿Es Factura?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Clasificador": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clasificar Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Salida": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Clasificar Email",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Factura?": {
+      "main": [
+        [
+          {
+            "node": "Obtener Adjuntos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Etiquetar Factura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No es Factura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Seleccionar Archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seleccionar Archivo": {
+      "main": [
+        [
+          {
+            "node": "¿Archivo OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Archivo OK?": {
+      "main": [
+        [
+          {
+            "node": "¿Es XML?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notificar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es XML?": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer XML": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos Extracción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer PDF": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos Extracción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos Extracción": {
+      "main": [
+        [
+          {
+            "node": "Formatear Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Contexto": {
+      "main": [
+        [
+          {
+            "node": "Extraer Datos Factura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Datos Factura": {
+      "main": [
+        [
+          {
+            "node": "Formatear Datos Finales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Extractor": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extraer Datos Factura",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Factura": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extraer Datos Factura",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Datos Finales": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Sheets": {
+      "main": [
+        [
+          {
+            "node": "Etiquetar Procesado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Error": {
+      "main": [
+        [
+          {
+            "node": "Etiquetar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        []
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Extraer XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Extraer PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "5b98423b-683e-476f-8109-97634229be15",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "99703c334b8f688c24ec82cacfeb0f26f37b67483a5c43c26f62de974da2dae8"
+  },
+  "id": "4yTu2EeGSFFbvoX2",
+  "tags": []
+}
