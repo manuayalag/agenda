@@ -1,0 +1,91 @@
+/* Fondo general de la app */
+.body, #root {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e0f7fa 0%, #ffffff 100%);
+}
+
+/* Barra de navegación principal */
+.mainNavbar {
+  background: #2A8C82 !important;
+  box-shadow: 0 8px 24px rgba(42, 140, 130, 0.10);
+  border-bottom-left-radius: 1rem;
+  border-bottom-right-radius: 1rem;
+}
+
+/* Tarjeta principal del contenido */
+.mainContentCard {
+  background: #fff;
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgba(65, 191, 179, 0.10);
+  padding: 2rem 1.5rem;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  min-height: 60vh;
+  width: 100%;
+}
+
+/* Footer de la aplicación */
+.mainFooter {
+  background: #e0f2f1;
+  border-top: 1px solid #b2dfdb;
+  border-bottom-left-radius: 1rem;
+  border-bottom-right-radius: 1rem;
+  box-shadow: 0 -2px 8px rgba(65, 191, 179, 0.04);
+  padding: 1rem 0;
+  margin-top: auto;
+}
+
+/* === SECCIÓN CORREGIDA === */
+/* Marca de la barra de navegación */
+.mainNavbar :global(.navbar-brand) {
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: #fff !important;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Enlaces y dropdowns del navbar */
+.mainNavbar :global(.nav-link),
+.mainNavbar :global(.dropdown-item) {
+  font-weight: 500;
+  font-size: 1.05rem;
+  color: #fff !important;
+  transition: background 0.2s, color 0.2s, border-radius 0.2s, box-shadow 0.4s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 1rem !important;
+  overflow: hidden;
+}
+
+/* Estado activo de enlaces y dropdowns */
+.mainNavbar :global(.nav-link.active),
+.mainNavbar :global(.dropdown-item.active) {
+  color: #fff !important;
+  background: #275950 !important;
+}
+
+/* Hover de enlaces y dropdowns */
+.mainNavbar :global(.nav-link:hover),
+.mainNavbar :global(.dropdown-item:hover) {
+  background: #275950 !important;
+  color: #fff !important;
+}
+
+/* Dropdown personalizado */
+.mainNavbar :global(.dropdown-menu) {
+  background: #fff !important;
+  border-radius: 1rem;
+  border: none;
+}
+.mainNavbar :global(.dropdown-item) {
+  color: #275950 !important;
+}
+.mainNavbar :global(.dropdown-item.active),
+.mainNavbar :global(.dropdown-item:active),
+.mainNavbar :global(.dropdown-item:hover) {
+  background: #275950 !important;
+  color: #fff !important;
+}

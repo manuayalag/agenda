@@ -1,1154 +1,428 @@
-import React, { useState, useEffect, useContext } from "react";
-import {
-  Container,
-  Card,
-  Form,
-  Row,
-  Col,
-  Button,
-  Alert,
-  Spinner,
-  Badge,
-} from "react-bootstrap";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useReducer, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Container, Card, Form, Row, Col, Button, Alert, Spinner } from 'react-bootstrap';
+import Calendar from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+import 'bootstrap-icons/font/bootstrap-icons.css';
+
+// --- Dependencias de API (Asegúrate de que las rutas sean correctas en tu proyecto) ---
 import { AuthContext } from "../../context/AuthContextValue";
-import {
-  AppointmentService,
-  DoctorService,
-  PatientService,
-  SectorService,
-} from "../../utils/api";
+import { AppointmentService, DoctorService, PatientService, SectorService } from "../../utils/api";
 import PrestadorServicioService from "../../services/PrestadorServicioService";
-import { format } from "date-fns";
 
-// Se usan estilos de Bootstrap directamente para el grid de horarios
+// ===================================================================================
+// 1. ESTILOS LOCALES
+// ===================================================================================
+const StyleProvider = React.memo(() => (
+  <style>
+    {`
+      .appointments-card {
+        background: #fff;
+        border-radius: 1rem;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      }
+      .appointments-card-header {
+        background-color: #fff !important;
+        border-bottom: 2px solid #f0f0f0 !important;
+        padding: 1rem 1.5rem;
+      }
+      .appointments-card-header h4 {
+        color: #275950;
+        font-weight: 600;
+      }
+      .form-label {
+        color: #2A8C82;
+        font-weight: 500;
+      }
+      
+      /* === ESTILOS DEL CALENDARIO DE DISPONIBILIDAD === */
+      .availability-calendar {
+        border: none;
+        font-family: inherit;
+      }
+      .availability-calendar .react-calendar__tile {
+        border-radius: 0.5rem;
+        transition: all 0.2s ease-in-out;
+      }
+      /* VERDE: Día laborable con horarios disponibles */
+      .availability-calendar .available-day {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        font-weight: bold;
+      }
+      /* ROJO: Día laborable, con agenda agotada */
+      .availability-calendar .full-day {
+        background-color: #ffebee;
+        color: #c62828;
+      }
+      /* GRIS: Día no laborable */
+      .availability-calendar .non-working-day {
+        background-color: #f5f5f5;
+        color: #bdbdbd;
+      }
+      /* GRIS TACHADO: Días pasados (deshabilitados por react-calendar) */
+      .availability-calendar .react-calendar__tile:disabled {
+        background-color: #f5f5f5 !important;
+        text-decoration: line-through;
+        opacity: 0.6;
+      }
+      /* AZUL: Día seleccionado */
+      .availability-calendar .react-calendar__tile--active:enabled {
+        background: #275950 !important;
+        color: white !important;
+        text-decoration: none;
+        transform: scale(1.1);
+      }
+      .availability-calendar .react-calendar__tile--active:enabled:hover {
+        background: #1d403a !important;
+      }
+      .availability-calendar .react-calendar__tile:enabled:hover {
+        background-color: #e0f7fa;
+      }
+      .availability-calendar .react-calendar__tile--now {
+        border: 2px solid #275950;
+      }
 
-const AppointmentForm = () => {
+      /* === ESTILOS DE LOS BOTONES DE HORA === */
+      .time-slot-button.selected {
+        background-color: #275950 !important;
+        border-color: #1d403a !important;
+        color: white;
+        transform: scale(1.05);
+        transition: transform 0.1s ease-in-out;
+        box-shadow: 0 2px 8px rgba(39, 89, 80, 0.2);
+      }
+    `}
+  </style>
+));
+
+// ===================================================================================
+// 2. GESTOR DE ESTADO (Reducer)
+// ===================================================================================
+const initialState = {
+  formData: { prestadorId: "", servicioId: "", patientId: "", date: "", startTime: "", endTime: "", status: "scheduled", reason: "", notes: "", sectorId: "" },
+  lists: { sectors: [], doctors: [], patients: [], services: [], dynamicSlots: [] },
+  monthlyAvailability: {},
+  ui: { selectedDoctor: null, selectedService: null, originalAppointment: null, isEditing: false, formKey: Date.now(), activeCalendarDate: new Date() },
+  status: { loading: { initial: true, doctors: false, services: false, slots: false, monthly: false, submit: false }, error: null },
+};
+
+function appointmentReducer(state, action) {
+  switch (action.type) {
+    case 'SET_INITIAL_CONTEXT':
+      return { ...state, ui: { ...state.ui, isEditing: action.payload.isEditing }, formData: { ...state.formData, sectorId: action.payload.userSectorId } };
+    case 'SET_FIELD':
+      return { ...state, formData: { ...state.formData, [action.payload.name]: action.payload.value } };
+    case 'SET_LIST':
+      return { ...state, lists: { ...state.lists, [action.payload.key]: action.payload.data } };
+    case 'SET_MONTHLY_AVAILABILITY':
+      return { ...state, monthlyAvailability: action.payload };
+    case 'SET_ACTIVE_CALENDAR_DATE':
+      return { ...state, ui: { ...state.ui, activeCalendarDate: action.payload } };
+    case 'SET_UI_STATE':
+      return { ...state, ui: { ...state.ui, [action.payload.key]: action.payload.value } };
+    case 'SET_LOADING':
+      return { ...state, status: { ...state.status, loading: { ...state.status.loading, [action.payload.key]: action.payload.value } } };
+    case 'SET_ERROR':
+      return { ...state, status: { ...state.status, error: action.payload, loading: { ...state.status.loading, submit: false } } };
+    case 'LOAD_EXISTING_APPOINTMENT':
+      return { ...state, formData: { ...state.formData, ...action.payload.formData }, ui: { ...state.ui, originalAppointment: action.payload.appointment, selectedDoctor: action.payload.doctor, selectedService: action.payload.service } };
+    case 'RESET_DOCTOR_SELECTION':
+      return { ...state, formData: { ...initialState.formData, sectorId: state.formData.sectorId, patientId: state.formData.patientId }, lists: { ...state.lists, doctors: state.lists.doctors, services: [], dynamicSlots: [] }, monthlyAvailability: {}, ui: { ...state.ui, selectedDoctor: null, selectedService: null } };
+    case 'RESET_SERVICE_SELECTION':
+        return { ...state, formData: { ...state.formData, servicioId: '', startTime: '', endTime: '' }, lists: { ...state.lists, dynamicSlots: [] }, ui: { ...state.ui, selectedService: null } };
+    case 'RESET_TIME_SELECTION':
+      return { ...state, formData: { ...state.formData, startTime: '', endTime: '' } };
+    case 'SUBMIT_SUCCESS':
+      return { ...initialState, lists: { ...initialState.lists, sectors: state.lists.sectors, patients: state.lists.patients }, ui: { ...initialState.ui, formKey: Date.now() } };
+    default:
+      throw new Error(`Unhandled action type: ${action.type}`);
+  }
+}
+
+// ===================================================================================
+// 3. HOOK DE LÓGICA (El Cerebro)
+// ===================================================================================
+function useAppointmentForm(authContext) {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEditing = !!id;
-  const { user, isAdmin } = useContext(AuthContext);
-  // Utilidad para comprobar si un doctor trabaja en un día específico
-  const isDoctorWorkingOnDate = (doctor, dateStr) => {
-    if (
-      !doctor ||
-      !doctor.workingDays ||
-      !dateStr ||
-      !Array.isArray(doctor.workingDays)
-    ) {
-      console.log("Datos faltantes para verificar día laborable:", {
-        doctor: !!doctor,
-        workingDays: doctor ? !!doctor.workingDays : false,
-        dateStr: !!dateStr,
-      });
-      return false;
-    }
+  const { user, isAdmin } = authContext;
 
-    try {
-      // Asegurar formato de fecha correcto (YYYY-MM-DD)
-      let formattedDate = dateStr;
-      if (!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const tempDate = new Date(dateStr);
-        formattedDate = `${tempDate.getFullYear()}-${String(
-          tempDate.getMonth() + 1
-        ).padStart(2, "0")}-${String(tempDate.getDate()).padStart(2, "0")}`;
-      }
-      // Para evitar problemas de zona horaria, usamos los componentes de la fecha directamente
-      // En lugar de confiar en parseISO que puede tener problemas con las zonas horarias
-      const [year, month, day] = formattedDate.split("-").map(Number);
-      // Crear la fecha usando componentes específicos (año, mes (0-indexed), día)
-      const dateObj = new Date(year, month - 1, day);
+  const [state, dispatch] = useReducer(appointmentReducer, initialState);
+  const { formData, lists, ui, status, monthlyAvailability } = state;
 
-      // getDay() sobre este objeto date para obtener el día correcto
-      const dayOfWeek = dateObj.getDay(); // 0-6 (0=domingo, 1=lunes, ..., 6=sábado)
-
-      // Convertir de 0-6 (domingo a sábado) a 1-7 (lunes a domingo) como lo usa la base de datos
-      const dayNumber = dayOfWeek === 0 ? 7 : dayOfWeek;
-
-      // Información detallada para depuración
-
-      // Convertir todos los días laborables a números y asegurarnos de que sean válidos
-      const workingDaysNumbers = [];
-      for (let day of doctor.workingDays) {
-        // Convertir string a número si es necesario
-        let dayNum = typeof day === "string" ? parseInt(day) : day;
-
-        // Solo incluir valores válidos (1-7)
-        if (!isNaN(dayNum) && dayNum >= 1 && dayNum <= 7) {
-          workingDaysNumbers.push(dayNum);
-        } else {
-          console.warn(
-            `Día inválido encontrado en workingDays: ${day} (${typeof day})`
-          );
-        }
-      }
-
-      // Si no hay días válidos, considerar que trabaja todos los días para prevenir bloqueos
-      if (workingDaysNumbers.length === 0) {
-        console.warn(
-          "No se encontraron días laborables válidos, asumiendo que trabaja todos los días"
-        );
-        return true;
-      }
-
-      // Verificar si el día está en los días laborables usando includes para comparación exacta
-      const isDayWorking = workingDaysNumbers.includes(dayNumber);
-
-      return isDayWorking;
-    } catch (error) {
-      console.error("Error al verificar día laborable:", error);
-      // En caso de error, asumimos que sí trabaja para no bloquear
-      return true;
-    }
-  };
-
-  // Utilidad para obtener los nombres de los días laborables
-  const getWorkingDaysLabels = (doctor) => {
-    if (!doctor || !doctor.workingDays || !Array.isArray(doctor.workingDays))
-      return [];
-
-    const dayNames = [
-      "",
-      "Lunes",
-      "Martes",
-      "Miércoles",
-      "Jueves",
-      "Viernes",
-      "Sábado",
-      "Domingo",
-    ];
-    return doctor.workingDays
-      .map((day) => {
-        const dayNum = typeof day === "string" ? parseInt(day) : day;
-        return dayNum >= 1 && dayNum <= 7 ? dayNames[dayNum] : null;
-      })
-      .filter((day) => day !== null);
-  };
-
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [sectors, setSectors] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [specialties, setSpecialties] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [availableSlots, setAvailableSlots] = useState([]);
-  const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [formKey, setFormKey] = useState(Date.now()); // Para forzar la recarga del formulario
-  const [originalAppointment, setOriginalAppointment] = useState(null); // Almacenar la cita original
-  const [debugInfo, setDebugInfo] = useState(null); // Para almacenar información de diagnóstico
-  const [servicios, setServicios] = useState([]);
-
-  const [formData, setFormData] = useState({
-    prestadorId: "",
-    servicioId: "",
-    patientId: "",
-    date: "",
-    startTime: "",
-    status: "scheduled",
-    reason: "",
-    notes: "",
-    sectorId: user.role === "sector_admin" ? user.sectorId : "",
-  });
-
-  // Cargar datos iniciales
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        setLoading(true);
-
-        // Si estamos editando, cargar los datos de la cita
-        if (isEditing) {
-          const appointmentResponse = await AppointmentService.getById(id);
-          const appointment = appointmentResponse.data;
-          setOriginalAppointment(appointment); // Guardar la cita original
-
-          // Formatear fechas y horas para asegurar consistencia
-          const formattedDate = new Date(appointment.date)
-            .toISOString()
-            .split("T")[0];
-
-          setFormData({
-            ...appointment,
-            date: formattedDate,
-            startTime: appointment.startTime,
-            prestadorId: appointment.prestadorId,
-            patientId: appointment.patientId,
-            servicioId: appointment.servicioId,
-            sectorId:
-              appointment.doctor?.sectorId ||
-              (user.role === "sector_admin" ? user.sectorId : ""),
-          });
-
-          // Si tenemos doctor, precargarlo
-          if (appointment.prestadorId) {
-            const doctorResponse = await DoctorService.getById(
-              appointment.prestadorId
-            );
-            const doctor = doctorResponse.data;
-            setSelectedDoctor(doctor);
-            console.log("Doctor cargado para edición:", doctor);
-
-            await loadAvailableSlots(appointment.prestadorId, formattedDate);
-          }
-        }
-
-        // Cargar sectores (solo si es admin)
-        if (isAdmin) {
-          const sectorsResponse = await SectorService.getAll();
-          setSectors(sectorsResponse.data);
-        }
-
-        // Cargar doctores según filtros (sector)
-        const sectorIdToUse = formData.sectorId || user.sectorId;
-        await loadDoctors(sectorIdToUse);
-
-        // Cargar pacientes para búsqueda
-        const patientsResponse = await PatientService.getAll();
-        setPatients(patientsResponse.data);
-
-        // Cargar servicios solo si hay prestador seleccionado
-        let serviciosResponse = { data: [] };
-        console.log("Prestador ID en carga inicial:", formData.prestadorId);
-        if (formData.prestadorId) {
-          serviciosResponse = await PrestadorServicioService.getServicios(formData.prestadorId);
-          console.log("Servicios cargadosasdsadasd:", serviciosResponse.data);
-        }
-        setServicios(serviciosResponse.data);
-      } catch (err) {
-        setError("Error al cargar los datos. Por favor, intente nuevamente.");
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchInitialData();
-  }, [id, isEditing, isAdmin, user.sectorId, user.role]);
-
-  // Refuerzo: solo cargar originalAppointment una vez al entrar en edición
-  useEffect(() => {
-    if (isEditing && !originalAppointment && id) {
-      AppointmentService.getById(id)
-        .then((res) => {
-          setOriginalAppointment(res.data);
-        })
-        .catch(() => {});
-    }
-    // No lo borres ni sobrescribas nunca durante la edición
-    // Si cambia el id (cita), se recarga automáticamente por el useEffect principal
-    // Si sales de la edición, el componente se desmonta y se limpia solo
-  }, [isEditing, id]);
-
-  // Hook para cargar horarios SOLO cuando originalAppointment esté listo en edición
-  useEffect(() => {
-    if (isEditing) {
-      if (originalAppointment) {
-        // Solo cargar horarios si ya tenemos la cita original
-        const formattedDate = new Date(originalAppointment.date)
-          .toISOString()
-          .split("T")[0];
-        loadAvailableSlots(originalAppointment.prestadorId, formattedDate);
-      }
-    }
-    // En modo creación, la lógica normal ya funciona
-    // eslint-disable-next-line
-  }, [isEditing, originalAppointment]);
-
-  // Cargar doctores según el sector seleccionado
-  const loadDoctors = async (sectorId) => {
-    try {
-      let doctorsResponse;
-
-      if (sectorId) {
-        doctorsResponse = await DoctorService.getBySector(sectorId);
-      } else {
-        doctorsResponse = await DoctorService.getAll();
-      }
-
-      setDoctors(doctorsResponse.data);
-
-      // Agrupar doctores por especialidad para mostrar en el selector
-      const uniqueSpecialties = [
-        ...new Set(doctorsResponse.data.map((doctor) => doctor.specialty?.id)),
-      ];
-      const specialtiesData = [];
-
-      for (const specialtyId of uniqueSpecialties) {
-        const doctor = doctorsResponse.data.find(
-          (d) => d.specialty?.id === specialtyId
-        );
-        if (doctor && doctor.specialty) {
-          specialtiesData.push(doctor.specialty);
-        }
-      }
-
-      setSpecialties(specialtiesData);
-    } catch (err) {
-      console.error("Error al cargar doctores:", err);
-    }
-  };
-  // Cargar horarios disponibles para un doctor en una fecha específica
-  const loadAvailableSlots = async (prestadorId, date, servicioId) => {
-    try {
-      if (!prestadorId || !date) {
-        setAvailableSlots([]);
-        return;
-      }
-      // Si tienes que enviar la duración del servicio, puedes buscarla aquí:
-      let duracionServicio = null;
-      if (servicioId && servicios && servicios.length > 0) {
-        const servicio = servicios.find(s => s.id === parseInt(servicioId));
-        if (servicio) duracionServicio = servicio.tiempo;
-      }
-      // Si tu backend soporta duración por query:
-      // const response = await DoctorService.getAvailability(prestadorId, date, duracionServicio);
-      // Si no, solo pasa prestadorId y date:
-      const response = await DoctorService.getAvailability(prestadorId, date);
-      setAvailableSlots(response.data.availableSlots || []);
-    } catch (err) {
-      setAvailableSlots([]);
-    }
-  };
-
-  // Manejar cambios en el formulario
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-
-    // Si cambia el sector, cargar doctores de ese sector
-    if (name === "sectorId") {
-      loadDoctors(value);
-
-      // Resetear doctor y horarios
-      setFormData((prev) => ({
-        ...prev,
-        prestadorId: "",
-        startTime: "",
-        endTime: "",
-      }));
-
-      setSelectedDoctor(null);
-      setAvailableSlots([]);
-    }
-
-    // Si cambia el doctor, cargar sus datos y disponibilidad
-    if (name === "prestadorId") {
-      const prestadorId = parseInt(value);
-
-      // Primero obtener los datos completos del doctor
-      const loadDoctorData = async () => {
+    dispatch({ type: 'SET_INITIAL_CONTEXT', payload: { isEditing, userSectorId: user.role === 'sector_admin' ? user.sectorId : '' } });
+    const fetchCoreData = async () => {
         try {
-          // Buscar primero en los doctores cargados
-          let doctor = doctors.find((d) => d.id === prestadorId);
+            const [patientsRes, sectorsRes] = await Promise.all([ PatientService.getAll(), isAdmin ? SectorService.getAll() : Promise.resolve({ data: [] }) ]);
+            dispatch({ type: 'SET_LIST', payload: { key: 'patients', data: patientsRes.data } });
+            if (sectorsRes.data) dispatch({ type: 'SET_LIST', payload: { key: 'sectors', data: sectorsRes.data } });
+            if (isEditing) {
+                const appRes = await AppointmentService.getById(id);
+                const appointment = appRes.data;
+                const [docRes, servicesRes] = await Promise.all([
+                    DoctorService.getById(appointment.prestadorId),
+                    PrestadorServicioService.getServicios(appointment.prestadorId)
+                ]);
+                const doctor = docRes.data;
+                const service = servicesRes.data.find(s => s.id === appointment.servicioId);
+                dispatch({ type: 'LOAD_EXISTING_APPOINTMENT', payload: { appointment, doctor, service, formData: { ...appointment, date: new Date(appointment.date).toISOString().split('T')[0], sectorId: doctor.sectorId } } });
+                dispatch({ type: 'SET_LIST', payload: { key: 'services', data: servicesRes.data } });
+            }
+        } catch (err) { dispatch({ type: 'SET_ERROR', payload: 'Error fatal al cargar datos.' });
+        } finally { dispatch({ type: 'SET_LOADING', payload: { key: 'initial', value: false } }); }
+    }
+    fetchCoreData();
+  }, [id, isEditing, isAdmin, user.role, user.sectorId]);
+  
+  useEffect(() => {
+    if (formData.sectorId) {
+      dispatch({ type: 'RESET_DOCTOR_SELECTION' });
+      dispatch({ type: 'SET_LOADING', payload: { key: 'doctors', value: true } });
+      DoctorService.getBySector(formData.sectorId)
+        .then(res => dispatch({ type: 'SET_LIST', payload: { key: 'doctors', data: res.data } }))
+        .catch(() => dispatch({ type: 'SET_ERROR', payload: 'Error al cargar doctores.' }))
+        .finally(() => dispatch({ type: 'SET_LOADING', payload: { key: 'doctors', value: false } }));
+    }
+  }, [formData.sectorId]);
 
-          // Si no lo encontramos o no tiene datos completos, cargarlo de nuevo
-          if (!doctor || !doctor.workingDays) {
-            const response = await DoctorService.getById(prestadorId);
-            doctor = response.data;
-          }
+  useEffect(() => {
+    if (formData.prestadorId) {
+      const doctor = lists.doctors.find(d => d.id === parseInt(formData.prestadorId));
+      dispatch({ type: 'SET_UI_STATE', payload: { key: 'selectedDoctor', value: doctor || null } });
+      dispatch({ type: 'RESET_SERVICE_SELECTION' });
+      dispatch({ type: 'SET_LOADING', payload: { key: 'services', value: true } });
+      PrestadorServicioService.getServicios(formData.prestadorId)
+        .then(res => dispatch({ type: 'SET_LIST', payload: { key: 'services', data: res.data } }))
+        .catch(() => dispatch({ type: 'SET_ERROR', payload: 'Error al cargar servicios.' }))
+        .finally(() => dispatch({ type: 'SET_LOADING', payload: { key: 'services', value: false } }));
+    } else {
+        dispatch({ type: 'SET_MONTHLY_AVAILABILITY', payload: {} });
+    }
+  }, [formData.prestadorId, lists.doctors]);
 
-          console.log("Doctor cargado:", doctor);
-          setSelectedDoctor(doctor);
+  useEffect(() => {
+      if(ui.selectedDoctor) {
+          dispatch({ type: 'SET_LOADING', payload: { key: 'monthly', value: true } });
+          const year = ui.activeCalendarDate.getFullYear();
+          const month = ui.activeCalendarDate.getMonth() + 1;
+          DoctorService.getMonthlyAvailability(ui.selectedDoctor.id, year, month)
+              .then(res => dispatch({ type: 'SET_MONTHLY_AVAILABILITY', payload: res.data }))
+              .catch(() => dispatch({ type: 'SET_ERROR', payload: 'Error al cargar disponibilidad del mes.' }))
+              .finally(() => dispatch({ type: 'SET_LOADING', payload: { key: 'monthly', value: false } }));
+      }
+  }, [ui.selectedDoctor, ui.activeCalendarDate]);
 
-          // Si ya hay fecha seleccionada, cargar horarios disponibles
-          if (formData.date) {
-            console.log(
-              `Doctor seleccionado: ${prestadorId}, cargando horarios para fecha: ${formData.date}`
-            );
-            loadAvailableSlots(prestadorId, formData.date);
-          }
+  useEffect(() => {
+      if (formData.servicioId) {
+          const service = lists.services.find(s => s.id === parseInt(formData.servicioId));
+          dispatch({ type: 'SET_UI_STATE', payload: { key: 'selectedService', value: service || null } });
+          dispatch({ type: 'RESET_TIME_SELECTION' });
+      }
+  }, [formData.servicioId, lists.services]);
+
+  useEffect(() => {
+    const calculateDynamicSlots = async () => {
+        if (!formData.date || !ui.selectedDoctor || !ui.selectedService) {
+            if (lists.dynamicSlots.length > 0) dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } });
+            return;
+        }
+        dispatch({ type: 'SET_LOADING', payload: { key: 'slots', value: true } });
+        try {
+            const availabilityResponse = await DoctorService.getDailyAvailability(ui.selectedDoctor.id, formData.date);
+            const { workBlocks = [], existingAppointments = [] } = availabilityResponse.data;
+            const serviceDuration = ui.selectedService.tiempo; 
+            if (!workBlocks || workBlocks.length === 0) {
+                dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } });
+                dispatch({ type: 'SET_LOADING', payload: { key: 'slots', value: false } });
+                return;
+            }
+            const timeToMinutes = (time) => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
+            const minutesToTime = (mins) => `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
+            const appointmentIntervals = existingAppointments
+                .filter(app => !(isEditing && app.id === ui.originalAppointment?.id))
+                .map(app => ({ start: timeToMinutes(app.startTime), end: timeToMinutes(app.endTime) }));
+            const availableSlots = [];
+            for (const block of workBlocks) {
+                let currentSlotStart = timeToMinutes(block.startTime);
+                const blockEnd = timeToMinutes(block.endTime);
+                while (currentSlotStart + serviceDuration <= blockEnd) {
+                    const currentSlotEnd = currentSlotStart + serviceDuration;
+                    const isOverlapping = appointmentIntervals.some(app => currentSlotStart < app.end && currentSlotEnd > app.start);
+                    if (!isOverlapping) {
+                        availableSlots.push({ start: minutesToTime(currentSlotStart), end: minutesToTime(currentSlotEnd) });
+                    }
+                    currentSlotStart += 15; // Intervalo de chequeo de 15 minutos
+                }
+            }
+            dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: availableSlots } });
         } catch (error) {
-          console.error("Error al cargar datos del doctor:", error);
-          setError("Error al cargar datos del doctor seleccionado");
+            dispatch({ type: 'SET_ERROR', payload: 'Error al calcular horarios.' });
+            dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } });
+        } finally {
+            dispatch({ type: 'SET_LOADING', payload: { key: 'slots', value: false } });
         }
-      };
-
-      loadDoctorData();
-    }
-
-    // Si cambia la fecha, cargar horarios disponibles
-    if (name === "date") {
-      // Resetear horarios
-      setFormData((prev) => ({
-        ...prev,
-        startTime: "",
-        endTime: "",
-      }));
-
-      if (formData.prestadorId) {
-        console.log(
-          `Fecha seleccionada: ${value}, cargando horarios para doctor: ${formData.prestadorId}`
-        );
-        loadAvailableSlots(parseInt(formData.prestadorId), value);
-      }
-    }
-
-    // Si selecciona un horario
-    if (name === "timeSlot") {
-      const [startTime, endTime] = value.split("|");
-
-      setFormData((prev) => ({
-        ...formData,
-        startTime,
-        endTime,
-      }));
-    }
-  };
-
-  // Enviar formulario
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    try {
-      setSubmitting(true);
-      setError("");
-
-      // Validaciones básicas
-      if (
-        !formData.prestadorId ||
-        !formData.patientId ||
-        !formData.date ||
-        !formData.startTime
-      ) {
-        setError("Por favor, complete todos los campos obligatorios.");
-        setSubmitting(false);
-        return;
-      }
-
-      // Verificar si el doctor trabaja ese día (a menos que sea edición y la fecha sea la misma que la original)
-      if (
-        selectedDoctor &&
-        (!isEditing ||
-          (isEditing &&
-            originalAppointment &&
-            formData.date !==
-              new Date(originalAppointment.date).toISOString().split("T")[0]))
-      ) {
-        if (!isDoctorWorkingOnDate(selectedDoctor, formData.date)) {
-          setError(
-            `El doctor seleccionado no trabaja en la fecha elegida (${new Date(
-              formData.date
-            ).toLocaleDateString()}).`
-          );
-          setSubmitting(false);
-          return;
-        }
-      }
-
-      // Si estamos editando, actualizar la cita
-      if (isEditing) {
-        await AppointmentService.update(id, formData);
-        navigate("/appointments", {
-          state: { success: "Cita actualizada correctamente" },
-        });
-      } else {
-        // Si estamos creando, crear la cita
-        await AppointmentService.create(formData);
-
-        // Reiniciar formulario y mostrar mensaje
-        setFormData({
-          prestadorId: "",
-          patientId: "",
-          date: "",
-          startTime: "",
-          status: "scheduled",
-          reason: "",
-          notes: "",
-          sectorId: user.role === "sector_admin" ? user.sectorId : "",
-        });
-
-        setSelectedDoctor(null);
-        setAvailableSlots([]);
-        setFormKey(Date.now()); // Forzar recarga del formulario
-
-        navigate("/appointments", {
-          state: { success: "Cita creada correctamente" },
-        });
-      }
-    } catch (err) {
-      setError(
-        `Error al guardar la cita: ${
-          err.response?.data?.message || err.message
-        }`
-      );
-      console.error(err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Siempre incluir el slot seleccionado en availableSlots si no está presente
-  useEffect(() => {
-    if (formData.startTime && availableSlots.length > 0) {
-      const exists = availableSlots.some(
-        (slot) => slot.start === formData.startTime
-      );
-      if (!exists) {
-        setAvailableSlots((prev) => [
-          ...prev,
-          { start: formData.startTime, end: formData.endTime },
-        ]);
-      }
-    }
-    // eslint-disable-next-line
-  }, [formData.startTime, availableSlots.length]);
-
-  // Cargar servicios del prestador seleccionado
-  useEffect(() => {
-    const fetchServiciosPrestador = async () => {
-      if (formData.prestadorId) {
-        try {
-          const resp = await PrestadorServicioService.getServicios(formData.prestadorId);
-          console.log("Servicios cargados:", resp.data);
-          setServicios(resp.data);
-        } catch (err) {
-          setServicios([]);
-        }
-      } else {
-        setServicios([]);
-      }
     };
-    fetchServiciosPrestador();
-  }, [formData.prestadorId]);
+    calculateDynamicSlots();
+  }, [formData.date, ui.selectedDoctor, ui.selectedService, isEditing, ui.originalAppointment]);
 
-  // Hook para recargar horarios cuando cambia el servicio seleccionado
-  useEffect(() => {
-    // Solo recargar si hay prestador, fecha y servicio seleccionados
-    if (formData.prestadorId && formData.date && formData.servicioId) {
-      loadAvailableSlots(parseInt(formData.prestadorId), formData.date, formData.servicioId);
+  const handleChange = useCallback((e) => {
+    const { name, value } = e.target;
+    dispatch({ type: 'SET_FIELD', payload: { name, value } });
+    if (name === 'sectorId') dispatch({ type: 'RESET_DOCTOR_SELECTION' });
+    if (name === 'prestadorId') dispatch({ type: 'RESET_SERVICE_SELECTION' });
+    if (name === 'date' || name === 'servicioId') dispatch({ type: 'RESET_TIME_SELECTION' });
+  }, []);
+
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    dispatch({ type: 'SET_LOADING', payload: { key: 'submit', value: true } });
+    if (!formData.prestadorId || !formData.patientId || !formData.date || !formData.startTime || !formData.endTime) {
+      dispatch({ type: 'SET_ERROR', payload: 'Por favor, complete todos los campos obligatorios.' });
+      dispatch({ type: 'SET_LOADING', payload: { key: 'submit', value: false } });
+      return;
     }
-    // eslint-disable-next-line
-  }, [formData.servicioId]);
+    try {
+      const action = isEditing ? AppointmentService.update(id, formData) : AppointmentService.create(formData);
+      await action;
+      dispatch({ type: 'SUBMIT_SUCCESS' });
+      navigate('/appointments', { state: { success: `Cita ${isEditing ? 'actualizada' : 'creada'} correctamente` } });
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: `Error al guardar: ${err.response?.data?.message || err.message}` });
+    }
+  }, [formData, isEditing, id, navigate]);
+
+  return { state, handlers: { handleChange, handleSubmit, navigate, dispatch }, isAdmin };
+}
+
+// ===================================================================================
+// 4. SUB-COMPONENTES DE PRESENTACIÓN
+// ===================================================================================
+const SectorSelector = ({ v, oC, s, d }) => ( <Form.Group className="mb-3"><Form.Label>Sector</Form.Label><Form.Select name="sectorId" value={v} onChange={oC} disabled={d}><option value="">Seleccione un sector</option>{s.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</Form.Select></Form.Group> );
+const DoctorSelector = ({ v, oC, d, dis, iL }) => ( <Form.Group className="mb-3"><Form.Label>Doctor</Form.Label><Form.Select name="prestadorId" value={v} onChange={oC} disabled={dis} required><option value="">{iL?'Cargando...':(dis?'Seleccione sector':'Seleccione doctor')}</option>{d.map(i => <option key={i.id} value={i.id}>{i.user?.fullName} - {i.specialty?.name}</option>)}</Form.Select></Form.Group> );
+const PatientSelector = ({ v, oC, p }) => ( <Form.Group className="mb-3"><Form.Label>Paciente</Form.Label><Form.Select name="patientId" value={v} onChange={oC} required><option value="">Seleccione un paciente</option>{p.map(i => <option key={i.id} value={i.id}>{i.fullName} ({i.documentId})</option>)}</Form.Select></Form.Group> );
+const ServiceSelector = ({ v, oC, s, dis, iL }) => ( <Form.Group className="mb-3"><Form.Label>Servicio</Form.Label><Form.Select name="servicioId" value={v} onChange={oC} disabled={dis} required><option value="">{iL?'Cargando...':'Seleccione un servicio'}</option>{s.map(i => <option key={i.id} value={i.id}>{i.nombre_servicio} ({i.tiempo} min)</option>)}</Form.Select></Form.Group> );
+const TimeSlotGrid = ({ slots, selectedSlot, onSlotClick, isLoading, dateSelected, serviceSelected }) => ( <Form.Group className="mb-3"><Form.Label>Horarios Disponibles</Form.Label>{isLoading ? <div className="text-center p-4"><Spinner animation="border" size="sm"/></div> : (<div className="d-flex flex-wrap gap-2">{slots.length>0 ? (slots.map((slot,i)=>(<Button key={i} variant="outline-primary" className={`time-slot-button ${selectedSlot===slot.start?'selected':''}`} onClick={()=>onSlotClick(slot)}>{slot.start}</Button>))):(<Alert variant="secondary" className="p-2 w-100 text-center small">{!dateSelected?"Seleccione fecha":!serviceSelected?"Seleccione servicio":"No hay horarios disponibles"}</Alert>)}</div>)}</Form.Group> );
+
+const AvailabilityCalendar = ({ date, onDateChange, monthlyAvailability, onActiveStartDateChange, isLoading }) => {
+    const tileClassName = useCallback(({ date: tileDate, view }) => {
+        if (view !== 'month') return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (tileDate < today) return null;
+        
+        const year = tileDate.getFullYear();
+        const month = String(tileDate.getMonth() + 1).padStart(2, '0');
+        const day = String(tileDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const status = monthlyAvailability[dateStr];
+        switch(status) {
+            case 'AVAILABLE': return 'available-day';
+            case 'FULL': return 'full-day';
+            case 'NOT_WORKING': return 'non-working-day';
+            default: return null;
+        }
+    }, [monthlyAvailability]);
+    
+    return (<Form.Group className="mb-3"><Form.Label>Calendario de Disponibilidad {isLoading&&<Spinner animation="border" size="sm" className="ms-2"/>}</Form.Label><Calendar className="availability-calendar" value={date?new Date(date+"T12:00:00Z"):null} onChange={(d)=>onDateChange(d?d.toISOString().split("T")[0]:'')} minDate={new Date()} tileClassName={tileClassName} onActiveStartDateChange={({activeStartDate})=>onActiveStartDateChange(activeStartDate)} locale="es-ES"/></Form.Group>);
+};
+
+// ===================================================================================
+// 5. COMPONENTE PRINCIPAL (La Vista)
+// ===================================================================================
+const AppointmentForm = () => {
+  const authContext = useContext(AuthContext);
+  const { state, handlers, isAdmin } = useAppointmentForm(authContext);
+  const { formData, lists, ui, status, monthlyAvailability } = state;
+
+  if (status.loading.initial) {
+    return <Container className="text-center py-5"><Spinner animation="border" variant="primary" /><p className="mt-2">Cargando...</p></Container>;
+  }
 
   return (
-    <Container className="py-4">
-      <Card className="border-0 shadow-sm">
-        <Card.Header className="bg-white py-3">
-          <h4 className="mb-0">{isEditing ? "Editar Cita" : "Nueva Cita"}</h4>
-        </Card.Header>
-
-        <Card.Body>
-          {loading ? (
-            <div className="text-center py-5">
-              <Spinner animation="border" variant="primary" />
-              <p className="mt-3">Cargando datos...</p>
-            </div>
-          ) : (
-            <Form key={formKey} onSubmit={handleSubmit}>
-              {error && (
-                <Alert
-                  variant="danger"
-                  dismissible
-                  onClose={() => setError("")}
-                >
-                  {error}
-                </Alert>
-              )}
-
+    <>
+      <StyleProvider />
+      <Container className="py-4">
+        <Card className="appointments-card">
+          <Card.Header className="appointments-card-header d-flex justify-content-between align-items-center p-3">
+            <h4 className="mb-0">
+              <i className="bi bi-calendar2-plus-fill me-2" style={{color: "#275950"}}></i>
+              {ui.isEditing ? "Editar Cita" : "Agendar Nueva Cita"}
+            </h4>
+          </Card.Header>
+          <Card.Body className="p-4">
+            <Form key={ui.formKey} onSubmit={handlers.handleSubmit} noValidate>
+              {status.error && <Alert variant="danger" onClose={() => handlers.dispatch({type: 'SET_ERROR', payload: null})} dismissible>{status.error}</Alert>}
+              
               <Row>
-                {/* Selector de Sector (solo para admins) */}
-                {isAdmin && (
-                  <Col md={6} className="mb-3">
-                    <Form.Group>
-                      <Form.Label>Sector</Form.Label>
-                      <Form.Select
-                        name="sectorId"
-                        value={formData.sectorId}
-                        onChange={handleChange}
-                      >
-                        <option value="">Seleccione un sector</option>
-                        {sectors.map((sector) => (
-                          <option key={sector.id} value={sector.id}>
-                            {sector.name}
-                          </option>
-                        ))}
-                      </Form.Select>
-                    </Form.Group>
-                  </Col>
-                )}
-
-                {/* Selector de especialidad */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Especialidad</Form.Label>
-                    <Form.Select
-                      name="specialtyId"
-                      onChange={(e) => {
-                        // Filtrar doctores por especialidad seleccionada
-                        const specialtyDoctors = doctors.filter(
-                          (d) => d.specialty?.id === parseInt(e.target.value)
-                        );
-
-                        // Si hay doctores, seleccionar el primero
-                        if (specialtyDoctors.length > 0) {
-                          const selectedprestadorId =
-                            specialtyDoctors[0].id.toString();
-
-                          setFormData((prev) => ({
-                            ...prev,
-                            prestadorId: selectedprestadorId,
-                            startTime: "",
-                            endTime: "",
-                          }));
-
-                          setSelectedDoctor(specialtyDoctors[0]);
-
-                          // Cargar horarios si hay fecha
-                          if (formData.date) {
-                            loadAvailableSlots(
-                              parseInt(selectedprestadorId),
-                              formData.date
-                            );
-                          }
-                        }
-                      }}
-                      value={selectedDoctor?.specialty?.id || ""}
-                    >
-                      <option value="">Seleccione una especialidad</option>
-                      {specialties.map((specialty) => (
-                        <option key={specialty.id} value={specialty.id}>
-                          {specialty.name}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
+                <Col lg={4} className="mb-3 mb-lg-0 pe-lg-4 border-end-lg">
+                  <h5 className="mb-3">1. Paciente y Profesional</h5>
+                  <PatientSelector v={formData.patientId} oC={handlers.handleChange} p={lists.patients} />
+                  {isAdmin && <SectorSelector v={formData.sectorId} oC={handlers.handleChange} s={lists.sectors} d={!isAdmin} />}
+                  <DoctorSelector v={formData.prestadorId} oC={handlers.handleChange} d={lists.doctors} dis={!formData.sectorId || status.loading.doctors} iL={status.loading.doctors} />
                 </Col>
-
-                {/* Selector de Doctor */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Doctor</Form.Label>
-                    <Form.Select
-                      name="prestadorId"
-                      value={formData.prestadorId}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Seleccione un doctor</option>
-                      {doctors.map((doctor) => (
-                        <option key={doctor.id} value={doctor.id}>
-                          {doctor.user?.fullName || `Doctor ID: ${doctor.id}`} -{" "}
-                          {doctor.specialty?.name || "Sin especialidad"}
-                        </option>
-                      ))}
-                    </Form.Select>
-
-                    {/* Mostrar información de días laborables del doctor seleccionado */}
-                    {selectedDoctor && selectedDoctor.workingDays && (
-                      <div className="mt-2 small">
-                        <Alert variant="info" className="p-2">
-                          <div>
-                            <strong>Horario:</strong>{" "}
-                            {selectedDoctor.workingHourStart?.substring(0, 5)} -{" "}
-                            {selectedDoctor.workingHourEnd?.substring(0, 5)}
-                          </div>
-                          <div>
-                            <strong>Días laborables:</strong>{" "}
-                            {getWorkingDaysLabels(selectedDoctor).join(", ")}
-                          </div>
-                        </Alert>
-                      </div>
-                    )}
-                  </Form.Group>
-                </Col>
-
-                {/* Selector de Servicio */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Servicio</Form.Label>
-                    <Form.Select
-                      name="servicioId"
-                      value={formData.servicioId || ""}
-                      onChange={handleChange}
-                      disabled={!servicios || servicios.length === 0}
-                      required
-                    >
-                      <option value="">Seleccione un servicio</option>
-                      {console.log("Servicios disponibles:", servicios)}
-                      {servicios && servicios.length > 0 ? (
-                        servicios.map((servicio) => (
-                          <option key={servicio.id} value={servicio.id}>
-                            {servicio.nombre_servicio} ({servicio.tiempo} min)
-                          </option>
-                        ))
-                      ) : null}
-                    </Form.Select>
-                    {/* Mensaje si el prestador no tiene servicios */}
-                    {formData.prestadorId && (!servicios || servicios.length === 0) && (
-                      <Alert variant="warning" className="mt-2 p-2 small">
-                        El prestador seleccionado no tiene servicios asignados.
-                      </Alert>
-                    )}
-                  </Form.Group>
-                </Col>
-
-                {/* Selector de Paciente */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Paciente</Form.Label>
-                    <Form.Select
-                      name="patientId"
-                      value={formData.patientId}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Seleccione un paciente</option>
-                      {patients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.fullName} ({patient.documentId})
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-
-                {/* Selector de Fecha */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Fecha</Form.Label>
-                    <Form.Control
-                      type="date"
-                      name="date"
-                      value={formData.date}
-                      onChange={handleChange}
-                      min={
-                        isEditing
-                          ? undefined
-                          : new Date().toISOString().split("T")[0]
-                      }
-                      required
-                    />
-                    {selectedDoctor && selectedDoctor.workingDays && (
-                      <div className="mt-2 small">
-                        <span className="fw-bold">
-                          Días laborables del doctor:{" "}
-                        </span>
-                        {selectedDoctor.workingDays.map((day) => {
-                          const dayNames = [
-                            "",
-                            "Lunes",
-                            "Martes",
-                            "Miércoles",
-                            "Jueves",
-                            "Viernes",
-                            "Sábado",
-                            "Domingo",
-                          ];
-                          const dayNum =
-                            typeof day === "string" ? parseInt(day) : day;
-                          return (
-                            <Badge
-                              key={dayNum}
-                              bg={
-                                formData.date &&
-                                isDoctorWorkingOnDate(
-                                  selectedDoctor,
-                                  formData.date
-                                )
-                                  ? "success"
-                                  : "secondary"
-                              }
-                              className="me-1"
-                            >
-                              {dayNames[dayNum]}
-                            </Badge>
-                          );
-                        })}
-                        {formData.date && (
-                          <div className="mt-1">
-                            {isDoctorWorkingOnDate(
-                              selectedDoctor,
-                              formData.date
-                            ) ? (
-                              <Alert
-                                variant="success"
-                                className="p-1 mt-1 small"
-                              >
-                                <i className="bi bi-check-circle me-1"></i>
-                                El doctor trabaja en la fecha seleccionada
-                              </Alert>
-                            ) : (
-                              <Alert
-                                variant="warning"
-                                className="p-1 mt-1 small"
-                              >
-                                <i className="bi bi-exclamation-circle me-1"></i>
-                                El doctor NO trabaja en la fecha seleccionada
-                              </Alert>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Form.Group>
-                </Col>
-                {/* Grid de Horarios Disponibles */}
-                <Col md={6} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Horario</Form.Label>
-                    <div className="time-slot-grid">
-                      {availableSlots.length > 0 ? (
-                        <>
-                          <div className="d-flex flex-wrap gap-2 mt-2">
-                            {availableSlots.map((slot, index) => {
-                              const slotValue = `${slot.start}|${slot.end}`;
-                              const isSelected =
-                                formData.startTime &&
-                                `${formData.startTime}|${formData.endTime}` ===
-                                  slotValue;
-                              // Detectar el slot original: usa originalAppointment si existe, si no, usa formData
-                              let isOriginal = false;
-                              if (isEditing) {
-                                if (originalAppointment) {
-                                  isOriginal =
-                                    originalAppointment.startTime === slot.start &&
-                                    originalAppointment.endTime === slot.end;
-                                } else if (formData.startTime && formData.endTime) {
-                                  isOriginal =
-                                    formData.startTime === slot.start &&
-                                    formData.endTime === slot.end;
-                                }
-                              }
-                              // Pintar de verde cualquier horario seleccionado
-                              let variant = isSelected ? "success" : "outline-primary";
-                              return (
-                                <Button
-                                  key={index}
-                                  variant={variant}
-                                  className={`time-slot-button ${
-                                    isSelected ? "selected" : ""
-                                  }`}
-                                  onClick={() => {
-                                    const [start, end] = slotValue.split("|");
-                                    setFormData({
-                                      ...formData,
-                                      startTime: start,
-                                    });
-                                  }}
-                                  disabled={!formData.prestadorId || !formData.date}
-                                >
-                                  {slot.start.substring(0, 5)} -{" "}
-                                  {slot.end.substring(0, 5)}
-                                  {isOriginal && isSelected && (
-                                    <span className="ms-1">(actual)</span>
-                                  )}
-                                </Button>
-                              );
-                            })}
-                          </div>
-                          {formData.startTime && (
-                            <div className="mt-2">
-                              <Alert variant="info" className="py-1 px-2 mb-0">
-                                <strong>Horario seleccionado:</strong>{" "}
-                                {formData.startTime.substring(0, 5)} -{" "}
-                                {formData.endTime.substring(0, 5)}
-                              </Alert>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="text-muted mt-2">
-                          {formData.prestadorId && formData.date ? (
-                            <p>No hay horarios disponibles</p>
-                          ) : (
-                            <p>Seleccione doctor y fecha para ver horarios</p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Campo oculto para mantener compatibilidad con el formulario */}
-                      <input
-                        type="hidden"
-                        name="timeSlot"
-                        value={
-                          formData.startTime && formData.endTime
-                            ? `${formData.startTime}|${formData.endTime}`
-                            : ""
-                        }
-                        required
-                      />
-                    </div>
-                    {formData.prestadorId && formData.date && (
-                      <div className="mt-2">
-                        {" "}
-                        {availableSlots.length === 0 ? (
-                          <Alert variant="warning" className="p-2">
-                            <i className="bi bi-exclamation-circle me-2"></i>
-                            No hay horarios disponibles para esta fecha.
-                            {selectedDoctor &&
-                              selectedDoctor.workingDays &&
-                              !isDoctorWorkingOnDate(
-                                selectedDoctor,
-                                formData.date
-                              ) &&
-                              " El doctor no trabaja este día."}
-                            {selectedDoctor &&
-                              selectedDoctor.workingDays &&
-                              isDoctorWorkingOnDate(
-                                selectedDoctor,
-                                formData.date
-                              ) &&
-                              (debugInfo && debugInfo.reason
-                                ? debugInfo.reason === "all_slots_booked"
-                                  ? " Todas las citas para este día ya están reservadas."
-                                  : debugInfo.reason === "no_working_hours"
-                                  ? " El doctor no tiene horario de trabajo configurado."
-                                  : debugInfo.reason === "invalid_working_hours"
-                                  ? " El horario de trabajo del doctor está configurado incorrectamente."
-                                  : debugInfo.reason === "fragmented_schedule"
-                                  ? " No hay slots disponibles debido a la fragmentación del horario."
-                                  : " No se pudieron generar horarios disponibles."
-                                : " Todas las citas para este día ya están reservadas.")}
-                            {(!selectedDoctor ||
-                              !selectedDoctor.workingDays ||
-                              selectedDoctor.workingDays.length === 0) &&
-                              " El doctor no tiene días laborables configurados."}
-                            {selectedDoctor &&
-                              (!selectedDoctor.workingHourStart ||
-                                !selectedDoctor.workingHourEnd) &&
-                              " Los horarios de trabajo del doctor no están configurados correctamente."}
-                          </Alert>
-                        ) : (
-                          <Alert variant="success" className="p-2">
-                            <i className="bi bi-check-circle me-2"></i>
-                            {availableSlots.length} horario
-                            {availableSlots.length > 1 ? "s" : ""} disponible
-                            {availableSlots.length > 1 ? "s" : ""}
-                            {selectedDoctor &&
-                              selectedDoctor.workingHourStart &&
-                              selectedDoctor.workingHourEnd && (
-                                <span className="ms-2">
-                                  (Horario del doctor:{" "}
-                                  {selectedDoctor.workingHourStart.substring(
-                                    0,
-                                    5
-                                  )}{" "}
-                                  -{" "}
-                                  {selectedDoctor.workingHourEnd.substring(
-                                    0,
-                                    5
-                                  )}
-                                  )
-                                </span>
-                              )}
-                          </Alert>
-                        )}
-                      </div>
-                    )}
-                    {!formData.prestadorId && (
-                      <Form.Text className="text-muted">
-                        Seleccione un doctor y una fecha para ver horarios
-                        disponibles.
-                      </Form.Text>
-                    )}
-                  </Form.Group>
-                </Col>
-
-                {/* Estado (solo para edición) */}
-                {isEditing && (
-                  <Col md={6} className="mb-3">
-                    <Form.Group>
-                      <Form.Label>Estado</Form.Label>
-                      <Form.Select
-                        name="status"
-                        value={formData.status}
-                        onChange={handleChange}
-                      >
-                        <option value="scheduled">Programada</option>
-                        <option value="completed">Completada</option>
-                        <option value="cancelled">Cancelada</option>
-                        <option value="no_show">No asistió</option>
-                      </Form.Select>
-                    </Form.Group>
-                  </Col>
-                )}
-
-                {/* Motivo de la cita */}
-                <Col md={12} className="mb-3">
-                  <Form.Group>
-                    <Form.Label>Motivo de la cita</Form.Label>
-                    <Form.Control
-                      as="textarea"
-                      name="reason"
-                      value={formData.reason}
-                      onChange={handleChange}
-                      rows={2}
-                    />
-                  </Form.Group>
-                </Col>
-
-                {/* Notas (solo para edición) */}
-                {isEditing && (
-                  <Col md={12} className="mb-3">
-                    <Form.Group>
-                      <Form.Label>Notas clínicas</Form.Label>
-                      <Form.Control
-                        as="textarea"
-                        name="notes"
-                        value={formData.notes}
-                        onChange={handleChange}
-                        rows={3}
-                      />
-                    </Form.Group>
-                  </Col>
-                )}
-              </Row>
-
-              {/* Información del doctor seleccionado */}
-              {selectedDoctor && selectedDoctor.workingDays && (
-                <Card className="mb-4">
-                  <Card.Header className="bg-light">
-                    <h5 className="mb-0">Información del Doctor</h5>
-                  </Card.Header>
-                  <Card.Body>
+                
+                <Col lg={8} className="mb-3 ps-lg-4">
+                  <fieldset disabled={!formData.prestadorId || !formData.patientId}>
                     <Row>
-                      <Col md={12}>
-                        <h6>
-                          {selectedDoctor.user?.fullName ||
-                            `Doctor ID: ${selectedDoctor.id}`}
-                        </h6>
-                        <p className="mb-1">
-                          <strong>Especialidad:</strong>{" "}
-                          {selectedDoctor.specialty?.name || "No definida"}
-                        </p>
-                        <p className="mb-1">
-                          <strong>Sector:</strong>{" "}
-                          {selectedDoctor.sector?.name || "No definido"}
-                        </p>
-                        <p className="mb-1">
-                          <strong>Duración de consulta:</strong>{" "}
-                          {selectedDoctor.appointmentDuration || "No definido"}{" "}
-                          minutos
-                        </p>
-                        <p className="mb-1">
-                          <strong>Horario:</strong>{" "}
-                          {selectedDoctor.workingHourStart?.substring(0, 5) ||
-                            "--:--"}{" "}
-                          a{" "}
-                          {selectedDoctor.workingHourEnd?.substring(0, 5) ||
-                            "--:--"}
-                        </p>
-                        <p className="mb-1">
-                          <strong>Días laborables:</strong>
-                        </p>
-                        <div className="mb-2">
-                          {[
-                            "Lunes",
-                            "Martes",
-                            "Miércoles",
-                            "Jueves",
-                            "Viernes",
-                            "Sábado",
-                            "Domingo",
-                          ].map((dayName, index) => {
-                            // Convertir índice 0-6 a formato 1-7 (donde 0->Lunes, 6->Domingo)
-                            const dayNum =
-                              index + 1 === 7 ? 7 : (index + 1) % 7;
-                            const isWorkingDay =
-                              selectedDoctor.workingDays &&
-                              selectedDoctor.workingDays.some((day) => {
-                                const workDay =
-                                  typeof day === "string" ? parseInt(day) : day;
-                                return workDay === dayNum;
-                              });
-
-                            return (
-                              <Badge
-                                key={dayNum}
-                                bg={isWorkingDay ? "success" : "secondary"}
-                                className="me-2 mb-1"
-                                style={{ opacity: isWorkingDay ? 1 : 0.5 }}
-                              >
-                                {dayName}
-                              </Badge>
-                            );
-                          })}
-                        </div>
+                      <Col xl={5} className="mb-3 mb-xl-0">
+                        <h5 className="mb-3">2. Servicio</h5>
+                        <ServiceSelector v={formData.servicioId} oC={handlers.handleChange} s={lists.services} dis={status.loading.services || !formData.prestadorId} iL={status.loading.services} />
+                      </Col>
+                      <Col xl={7}>
+                        <fieldset disabled={!formData.servicioId}>
+                          <h5 className="mb-3">3. Fecha y Hora</h5>
+                          <Row>
+                            <Col md={7} className="mb-3 mb-md-0">
+                              <AvailabilityCalendar date={formData.date} onDateChange={(d)=>handlers.handleChange({target:{name:'date',value:d}})} monthlyAvailability={monthlyAvailability} onActiveStartDateChange={(d)=>handlers.dispatch({type:'SET_ACTIVE_CALENDAR_DATE',payload:d})} isLoading={status.loading.monthly}/>
+                            </Col>
+                            <Col md={5}>
+                              <TimeSlotGrid slots={lists.dynamicSlots} selectedSlot={formData.startTime} onSlotClick={(slot)=>{handlers.handleChange({target:{name:'startTime',value:slot.start}});handlers.handleChange({target:{name:'endTime',value:slot.end}});}} isLoading={status.loading.slots} dateSelected={!!formData.date} serviceSelected={!!formData.servicioId}/>
+                            </Col>
+                          </Row>
+                        </fieldset>
                       </Col>
                     </Row>
-                  </Card.Body>
-                </Card>
-              )}
-              {/* Información de depuración */}
-              {debugInfo && (
-                <Alert variant="info" className="mt-3 mb-3 small">
-                  <h6>Información de depuración:</h6>
-                  {debugInfo.workingHours && (
-                    <p className="mb-1">
-                      Horario del doctor: {debugInfo.workingHours.start} -{" "}
-                      {debugInfo.workingHours.end} (duración:{" "}
-                      {debugInfo.workingHours.duration} min)
-                    </p>
-                  )}
-                  {debugInfo.appointments !== undefined && (
-                    <p className="mb-1">
-                      Citas existentes: {debugInfo.appointments}
-                    </p>
-                  )}
-                  {debugInfo.reason && (
-                    <p className="mb-1">
-                      Razón de no disponibilidad: {debugInfo.reason}
-                    </p>
-                  )}
-                  {debugInfo.workingInfo && (
-                    <>
-                      <p className="mb-1">
-                        Días laborables:{" "}
-                        {JSON.stringify(debugInfo.workingInfo.workingDays)}
-                      </p>
-                      <p className="mb-1">
-                        Tiene horario configurado:{" "}
-                        {debugInfo.workingInfo.hasWorkingHours ? "Sí" : "No"}
-                      </p>
-                    </>
-                  )}
-                </Alert>
-              )}
-              {isEditing && (
-                <Alert variant="warning" className="mt-2">
-                  <strong>Depuración:</strong> originalAppointment = {JSON.stringify(originalAppointment)}
-                </Alert>
+                  </fieldset>
+                </Col>
+              </Row>
+
+              <hr className="my-4"/>
+
+              {formData.startTime && (<Alert variant="success"><strong>Cita seleccionada:</strong> {new Date(formData.date+"T12:00:00Z").toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric', timeZone:'UTC'})} a las <strong>{formData.startTime}</strong></Alert>)}
+              
+              <Form.Group>
+                <Form.Label>Motivo de la cita (opcional)</Form.Label>
+                <Form.Control as="textarea" name="reason" value={formData.reason} onChange={handlers.handleChange} rows={2} />
+              </Form.Group>
+
+              {ui.isEditing && (
+                  <Form.Group className="mt-3">
+                    <Form.Label>Estado de la Cita</Form.Label>
+                    <Form.Select name="status" value={formData.status} onChange={handlers.handleChange}>
+                      <option value="scheduled">Programada</option>
+                      <option value="completed">Completada</option>
+                      <option value="cancelled">Cancelada</option>
+                      <option value="no_show">No asistió</option>
+                    </Form.Select>
+                  </Form.Group>
               )}
 
-              {/* Botones de acción */}
-              <div className="d-flex justify-content-end gap-2">
-                <Button
-                  variant="outline-secondary"
-                  onClick={() => navigate("/appointments")}
-                  disabled={submitting}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting ? (
-                    <>
-                      <Spinner
-                        as="span"
-                        animation="border"
-                        size="sm"
-                        role="status"
-                        aria-hidden="true"
-                        className="me-2"
-                      />
-                      Guardando...
-                    </>
-                  ) : isEditing ? (
-                    "Actualizar Cita"
-                  ) : (
-                    "Crear Cita"
-                  )}
+              <div className="d-flex justify-content-end gap-2 mt-4">
+                <Button variant="outline-secondary" onClick={() => handlers.navigate("/appointments")} disabled={status.loading.submit}>Cancelar</Button>
+                <Button type="submit" variant="primary" className="btn-azul" disabled={status.loading.submit || !formData.startTime}>
+                  {status.loading.submit ? <><Spinner as="span" animation="border" size="sm" className="me-2"/>Guardando...</> : (ui.isEditing ? 'Actualizar Cita' : 'Crear Cita')}
                 </Button>
               </div>
             </Form>
-          )}
-        </Card.Body>
-      </Card>
-    </Container>
+          </Card.Body>
+        </Card>
+      </Container>
+    </>
   );
 };
 
