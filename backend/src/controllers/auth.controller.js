@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../models');
 const User = db.User;
-const Doctor = db.Doctor;
+const Prestador = db.Prestador;
 const Sector = db.Sector;
 
 // Función de registro de usuario
@@ -18,9 +18,9 @@ exports.signup = async (req, res) => {
       sectorId: req.body.sectorId
     });
 
-    // Si es doctor, crear entrada en tabla doctors
+    // Si es prestador, crear entrada en tabla prestadores
     if (req.body.role === 'doctor' && req.body.specialtyId) {
-      await Doctor.create({
+      await Prestador.create({
         userId: user.id,
         specialtyId: req.body.specialtyId,
         sectorId: req.body.sectorId,
@@ -91,12 +91,12 @@ exports.signin = async (req, res) => {
       expiresIn: 86400 // 24 horas
     });
 
-    let doctorInfo = null;
+    let prestadorInfo = null;
     let sectorInfo = null;
 
-    // Si es doctor, obtener información adicional
+    // Si es prestador, obtener información adicional
     if (user.role === 'doctor') {
-      doctorInfo = await Doctor.findOne({
+      prestadorInfo = await Prestador.findOne({
         where: { userId: user.id },
         include: [
           { model: db.Specialty, as: 'specialty' },
@@ -117,7 +117,7 @@ exports.signin = async (req, res) => {
       fullName: user.fullName,
       role: user.role,
       sectorId: user.sectorId,
-      doctor: doctorInfo,
+      prestador: prestadorInfo,
       sector: sectorInfo,
       accessToken: token
     });

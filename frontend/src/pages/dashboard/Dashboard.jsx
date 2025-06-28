@@ -254,8 +254,8 @@ const Dashboard = () => {
                           <td>{appointment.patient?.fullName || 'Paciente no disponible'}</td>
                           {user.role !== 'doctor' && (
                             <td>
-                              {appointment.doctor?.user?.fullName || 
-                               appointment.doctor?.userId ? `Doctor ID: ${appointment.doctor.userId}` : 
+                              {console.log(appointment.prestador.user.fullName)}
+                              {appointment.prestador.user.fullName ? appointment.prestador.user.fullName : 
                                'Doctor no disponible'}
                             </td>
                           )}
