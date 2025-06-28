@@ -44,11 +44,19 @@ const Dashboard = () => {
           try {
           if (user.role === 'doctor') {
             // Para usuarios doctores, buscar sus citas específicas
-            // Primero verificamos si tenemos la información del doctor
-            if (!user.prestadorId) {
-              console.warn("Este usuario doctor no tiene un ID de doctor asociado");
+            // Buscar el ID del prestador correctamente
+            let prestadorId = null;
+            if (user.prestador && user.prestador.id) {
+              prestadorId = user.prestador.id;
+            } else if (user.prestadorId) {
+              prestadorId = user.prestadorId;
+            } else if (user.doctor && user.doctor.id) { // fallback legacy
+              prestadorId = user.doctor.id;
+            }
+            if (!prestadorId) {
+              console.warn("Este usuario doctor no tiene un ID de prestador asociado", user);
             } else {
-              const response = await AppointmentService.getDoctorAppointments(user.prestadorId, params);
+              const response = await AppointmentService.getDoctorAppointments(prestadorId, params);
               // Manejar tanto la respuesta directa como la estructura con data
               appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
             }

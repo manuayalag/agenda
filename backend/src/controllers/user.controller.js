@@ -1,6 +1,6 @@
 const db = require('../models');
 const User = db.User;
-const Doctor = db.Doctor;
+const Prestador = db.Prestador; // Cambiado de Doctor a Prestador
 const bcrypt = require('bcryptjs');
 
 // Obtener todos los usuarios
@@ -50,7 +50,7 @@ exports.getUserById = async (req, res) => {
     
     // Si es doctor, incluir información adicional
     if (user.role === 'doctor') {
-      const doctorInfo = await Doctor.findOne({ 
+      const prestadorInfo = await Prestador.findOne({ 
         where: { userId: user.id },
         include: [
           { model: db.Specialty, as: 'specialty' },
@@ -58,8 +58,8 @@ exports.getUserById = async (req, res) => {
         ]
       });
       
-      if (doctorInfo) {
-        user.dataValues.doctorInfo = doctorInfo;
+      if (prestadorInfo) {
+        user.dataValues.prestadorInfo = prestadorInfo;
       }
     }
     
@@ -108,7 +108,7 @@ exports.updateUser = async (req, res) => {
     
     // Si es doctor, actualizar información del doctor
     if (user.role === 'doctor') {
-      const doctor = await Doctor.findOne({ where: { userId: user.id } });
+      const doctor = await Prestador.findOne({ where: { userId: user.id } });
       
       if (doctor && req.body.doctorInfo) {
         const doctorData = {
