@@ -4,6 +4,7 @@ import { Container, Card, Form, Row, Col, Button, Alert, Spinner } from 'react-b
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import 'bootstrap-icons/font/bootstrap-icons.css';
+import Select from 'react-select';
 
 // --- Dependencias de API (Asegúrate de que las rutas sean correctas en tu proyecto) ---
 import { AuthContext } from "../../context/AuthContextValue";
@@ -302,9 +303,57 @@ function useAppointmentForm(authContext) {
 // 4. SUB-COMPONENTES DE PRESENTACIÓN
 // ===================================================================================
 const SectorSelector = ({ v, oC, s, d }) => ( <Form.Group className="mb-3"><Form.Label>Sector</Form.Label><Form.Select name="sectorId" value={v} onChange={oC} disabled={d}><option value="">Seleccione un sector</option>{s.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</Form.Select></Form.Group> );
-const DoctorSelector = ({ v, oC, d, dis, iL }) => ( <Form.Group className="mb-3"><Form.Label>Doctor</Form.Label><Form.Select name="prestadorId" value={v} onChange={oC} disabled={dis} required><option value="">{iL?'Cargando...':(dis?'Seleccione sector':'Seleccione doctor')}</option>{d.map(i => <option key={i.id} value={i.id}>{i.user?.fullName} - {i.specialty?.name}</option>)}</Form.Select></Form.Group> );
-const PatientSelector = ({ v, oC, p }) => ( <Form.Group className="mb-3"><Form.Label>Paciente</Form.Label><Form.Select name="patientId" value={v} onChange={oC} required><option value="">Seleccione un paciente</option>{p.map(i => <option key={i.id} value={i.id}>{i.fullName} ({i.documentId})</option>)}</Form.Select></Form.Group> );
-const ServiceSelector = ({ v, oC, s, dis, iL }) => ( <Form.Group className="mb-3"><Form.Label>Servicio</Form.Label><Form.Select name="servicioId" value={v} onChange={oC} disabled={dis} required><option value="">{iL?'Cargando...':'Seleccione un servicio'}</option>{s.map(i => <option key={i.id} value={i.id}>{i.nombre_servicio} ({i.tiempo} min)</option>)}</Form.Select></Form.Group> );
+const PatientSelector = ({ v, oC, p }) => (
+  <Form.Group className="mb-3">
+    <Form.Label>Paciente</Form.Label>
+    <Select
+      name="patientId"
+      options={p.map(i => ({ value: i.id, label: `${i.fullName} (${i.documentId})` }))}
+      onChange={selected => oC({ target: { name: 'patientId', value: selected ? selected.value : '' } })}
+      value={p.map(i => ({ value: i.id, label: `${i.fullName} (${i.documentId})` })).find(i => i.value === v) || null}
+      isClearable
+      isSearchable
+      required
+      placeholder="Buscar y seleccionar paciente..."
+    />
+  </Form.Group>
+);
+
+const DoctorSelector = ({ v, oC, d, dis, iL }) => (
+  <Form.Group className="mb-3">
+    <Form.Label>Doctor</Form.Label>
+    <Select
+      name="prestadorId"
+      options={d.map(i => ({ value: i.id, label: `${i.user?.fullName} - ${i.specialty?.name}` }))}
+      onChange={selected => oC({ target: { name: 'prestadorId', value: selected ? selected.value : '' } })}
+      value={d.map(i => ({ value: i.id, label: `${i.user?.fullName} - ${i.specialty?.name}` })).find(i => i.value === v) || null}
+      isDisabled={dis}
+      isLoading={iL}
+      isClearable
+      isSearchable
+      required
+      placeholder="Buscar y seleccionar doctor..."
+    />
+  </Form.Group>
+);
+
+const ServiceSelector = ({ v, oC, s, dis, iL }) => (
+  <Form.Group className="mb-3">
+    <Form.Label>Servicio</Form.Label>
+    <Select
+      name="servicioId"
+      options={s.map(i => ({ value: i.id, label: `${i.nombre_servicio} (${i.tiempo} min)` }))}
+      onChange={selected => oC({ target: { name: 'servicioId', value: selected ? selected.value : '' } })}
+      value={s.map(i => ({ value: i.id, label: `${i.nombre_servicio} (${i.tiempo} min)` })).find(i => i.value === v) || null}
+      isDisabled={dis}
+      isLoading={iL}
+      isClearable
+      isSearchable
+      required
+      placeholder="Buscar y seleccionar servicio..."
+    />
+  </Form.Group>
+);
 const TimeSlotGrid = ({ slots, selectedSlot, onSlotClick, isLoading, dateSelected, serviceSelected }) => ( <Form.Group className="mb-3"><Form.Label>Horarios Disponibles</Form.Label>{isLoading ? <div className="text-center p-4"><Spinner animation="border" size="sm"/></div> : (<div className="d-flex flex-wrap gap-2">{slots.length>0 ? (slots.map((slot,i)=>(<Button key={i} variant="outline-primary" className={`time-slot-button ${selectedSlot===slot.start?'selected':''}`} onClick={()=>onSlotClick(slot)}>{slot.start}</Button>))):(<Alert variant="secondary" className="p-2 w-100 text-center small">{!dateSelected?"Seleccione fecha":!serviceSelected?"Seleccione servicio":"No hay horarios disponibles"}</Alert>)}</div>)}</Form.Group> );
 
 const AvailabilityCalendar = ({ date, onDateChange, monthlyAvailability, onActiveStartDateChange, isLoading }) => {

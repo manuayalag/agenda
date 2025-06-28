@@ -6,6 +6,7 @@ import { AppointmentService, DoctorService, SectorService } from '../../utils/ap
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import 'bootstrap-icons/font/bootstrap-icons.css';
+import Select from 'react-select';
 
 const Appointments = () => {
   const { user, isAdmin, isSectorAdmin, isDoctor } = useContext(AuthContext);
@@ -494,21 +495,23 @@ const Appointments = () => {
                       <Form.Label className="appointments-filter-label">
                         <i className="bi bi-person-badge me-1"></i>Doctor
                       </Form.Label>
-                      <Form.Select
-                        name="prestadorId"
-                        value={filters.prestadorId}
-                        onChange={handleFilterChange}
-                        className="appointments-filter-select"
-                      >
-                        <option value="">Todos</option>
-                        {doctors.map(doctor => (
-                          <option key={doctor.id} value={doctor.id}>
-                            {doctor.user?.fullName || `Doctor ID: ${doctor.id}`}
-                          </option>
-                        ))}
-                      </Form.Select>
-                    </Form.Group>
-                  </Col>
+                      <Select
+                            name="prestadorId"
+                            options={doctors.map(doctor => ({
+                              value: doctor.id,
+                              label: doctor.user?.fullName || `Doctor ID: ${doctor.id}`
+                            }))}
+                            onChange={selectedOption => handleFilterChange({
+                              target: { name: 'prestadorId', value: selectedOption ? selectedOption.value : '' }
+                            })}
+                            value={doctors.map(d => ({value: d.id, label: d.user?.fullName})).find(d => d.value === filters.prestadorId) || null}
+                            isClearable
+                            isSearchable
+                            placeholder="Buscar doctor..."
+                            noOptionsMessage={() => "No se encontraron doctores"}
+                          />
+                        </Form.Group>
+                      </Col>
                 )}
                 {isAdmin && (
                   <Col lg={2} md={4} sm={6} className="mb-3">
