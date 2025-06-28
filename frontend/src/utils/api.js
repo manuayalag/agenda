@@ -26,16 +26,18 @@ api.interceptors.request.use(
 
 // Interceptor para manejar errores de autenticación
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      // Si la API devuelve un error 401, cerrar sesión
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      window.location.pathname !== '/login'
+    ) {
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
+    // Si ya estás en /login, solo rechaza el error y deja que el componente maneje el mensaje
     return Promise.reject(error);
   }
 );

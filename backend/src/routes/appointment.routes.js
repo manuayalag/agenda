@@ -8,7 +8,6 @@ router.use(authJwt.verifyToken);
 
 // Rutas para citas
 router.post('/', controller.createAppointment);
-router.get('/', controller.getAllAppointments);
 router.get('/filtered', controller.getFilteredAppointments);
 router.get('/prestador/:prestadorId', controller.getPrestadorAppointments);
 router.get('/:id', controller.getAppointmentById);
