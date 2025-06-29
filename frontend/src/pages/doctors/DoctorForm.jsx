@@ -274,7 +274,7 @@ const DoctorForm = () => {
               <div>
                 {servicios.map(servicio => (
                   <Form.Check
-                    key={servicio.id_servicio}
+                    key={servicio.id_servicio ? `servicio-${servicio.id_servicio}` : `servicio-${servicio.id}`}
                     type="checkbox"
                     label={`${servicio.nombre_servicio} ($${servicio.precio}, ${servicio.tiempo} min)`}
                     value={servicio.id_servicio}
