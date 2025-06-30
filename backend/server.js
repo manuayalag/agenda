@@ -22,7 +22,6 @@ const patientRoutes = require('./src/routes/patient.routes');
 const sectorRoutes = require('./src/routes/sector.routes');
 const specialtyRoutes = require('./src/routes/specialty.routes');
 const ticketRoutes = require('./src/routes/ticket.routes');
-const servicioCoberturaRoutes = require('./src/routes/servicio_cobertura.routes');
 const prestadorRoutes = require('./src/routes/prestador.routes');
 const seguroServicioRoutes = require('./src/routes/seguro_servicio.routes');
 
@@ -34,7 +33,6 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/specialties', specialtyRoutes);
 app.use('/api/tickets', ticketRoutes);
-app.use('/api/servicios', servicioCoberturaRoutes);
 app.use('/api/prestadores', prestadorRoutes);
 app.use('/api/seguros', seguroServicioRoutes);
 
