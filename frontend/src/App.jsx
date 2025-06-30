@@ -41,6 +41,7 @@ import Tickets from './pages/tickets/Tickets';
 
 // Seguros Pages
 import SegurosMedicos from './pages/seguros/SegurosMedicos';
+import SeguroCoberturas from './pages/seguros/SeguroCoberturas';
 
 // Protect routes based on auth status and role
 const PrivateRoute = ({ children, roles = [] }) => {
@@ -205,6 +206,7 @@ function App() {
 
         {/* Seguros Route */}
         <Route path="seguros" element={<SegurosMedicos />} />
+        <Route path="/seguros/coberturas" element={<SeguroCoberturas />} />
 
         {/* Catch all route */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
