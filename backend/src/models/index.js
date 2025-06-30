@@ -150,5 +150,8 @@ db.Servicio.belongsToMany(db.SeguroMedico, {
 });
 
 // Cobertura: puedes acceder por db.CoberturaSeguro.findOne({ where: { id_seguro, id_servicio } })
+db.Servicio.hasMany(db.CoberturaSeguro, { foreignKey: 'id_servicio', as: 'coberturas' });
+db.CoberturaSeguro.belongsTo(db.Servicio, { foreignKey: 'id_servicio', as: 'servicio' });
+db.CoberturaSeguro.belongsTo(db.SeguroMedico, { foreignKey: 'id_seguro', as: 'seguro' });
 
 module.exports = db;
