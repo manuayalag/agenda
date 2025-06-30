@@ -1,11 +1,13 @@
 import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Row, Col, Alert, Spinner } from 'react-bootstrap';
+import { Container, Card, Form, Button, Row, Col, Alert, Spinner, Table } from 'react-bootstrap';
 import Select from 'react-select';
 import api from '../../utils/api';
 import { AuthContext } from '../../context/AuthContextValue';
 import ServicioService from '../../services/ServicioService';
 import PrestadorServicioService from '../../services/PrestadorServicioService';
+import PrestadorSeguroService from '../../services/PrestadorSeguroService';
+import SeguroService from '../../services/SeguroService';
 import styles from './Doctors.module.css';
 
 const DoctorForm = () => {
@@ -28,6 +30,9 @@ const DoctorForm = () => {
   const [users, setUsers] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
+  const [seguros, setSeguros] = useState([]);
+  const [segurosPrestador, setSegurosPrestador] = useState([]);
+  const [selectedSeguro, setSelectedSeguro] = useState('');
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState('');
@@ -111,6 +116,18 @@ const DoctorForm = () => {
       setServiciosSeleccionados(prev =>
         prev.includes(value) ? prev.filter(id => id !== value) : [...prev, value]
       );
+  };
+
+  const handleAddSeguro = async () => {
+    if (!selectedSeguro) return;
+    await PrestadorSeguroService.addSeguro(id, selectedSeguro);
+    PrestadorSeguroService.getSegurosByPrestador(id).then(res => setSegurosPrestador(res.data));
+    setSelectedSeguro('');
+  };
+
+  const handleRemoveSeguro = async (id_seguro) => {
+    await PrestadorSeguroService.removeSeguro(id, id_seguro);
+    PrestadorSeguroService.getSegurosByPrestador(id).then(res => setSegurosPrestador(res.data));
   };
 
   const handleSubmit = async (e) => {
@@ -227,6 +244,58 @@ const DoctorForm = () => {
               <Button variant="secondary" onClick={() => navigate('/doctors')} disabled={loading}>Cancelar</Button>
               <Button type="submit" className={styles.primaryButton} disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</Button>
             </div>
+          </Form>
+
+          <hr className="my-4" />
+
+          <h5>Seguros que acepta este prestador</h5>
+          <Table size="sm" bordered>
+            <thead>
+              <tr>
+                <th>Seguro</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {segurosPrestador.map(seguro => (
+                <tr key={seguro.id_seguro}>
+                  <td>{seguro.nombre}</td>
+                  <td>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => handleRemoveSeguro(seguro.id_seguro)}
+                    >
+                      Quitar
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <Form inline="true" className="mb-3">
+            <Form.Select
+              value={selectedSeguro}
+              onChange={e => setSelectedSeguro(e.target.value)}
+              style={{ width: 200, display: 'inline-block', marginRight: 8 }}
+            >
+              <option value="">Agregar seguro...</option>
+              {seguros
+                .filter(s => !segurosPrestador.some(sp => sp.id_seguro === s.id_seguro))
+                .map(seguro => (
+                  <option key={seguro.id_seguro} value={seguro.id_seguro}>
+                    {seguro.nombre}
+                  </option>
+                ))}
+            </Form.Select>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleAddSeguro}
+              disabled={!selectedSeguro}
+            >
+              Agregar
+            </Button>
           </Form>
         </Card.Body>
       </Card>
