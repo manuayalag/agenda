@@ -51,6 +51,14 @@ module.exports = (sequelize, DataTypes) => {
     active: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
+    },
+    id_seguro: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'seguros_medicos',
+        key: 'id_seguro'
+      }
     }
   }, {
     timestamps: true,

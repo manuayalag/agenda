@@ -36,6 +36,10 @@ db.Servicio = require('./servicio.model')(sequelize, DataTypes);
 db.PrestadorServicio = require('./prestador_servicio.model')(sequelize, DataTypes);
 const PrestadorHorario = require('./prestador_horario.model')(sequelize, DataTypes);
 db.PrestadorHorario = PrestadorHorario;
+db.SeguroMedico = require('./seguro_medico.model')(sequelize, DataTypes);
+db.PrestadorSeguro = require('./prestador_seguro.model')(sequelize, DataTypes);
+db.ServicioSeguro = require('./servicio_seguro.model')(sequelize, DataTypes);
+db.CoberturaSeguro = require('./cobertura_seguro.model')(sequelize, DataTypes);
 
 // Relaciones entre modelos
 // Un usuario puede ser admin o personal administrativo
@@ -112,5 +116,39 @@ db.Sector.hasMany(db.Prestador, { foreignKey: 'sectorId', as: 'prestadores' });
 // Relación: Un prestador tiene muchos horarios
 db.Prestador.hasMany(db.PrestadorHorario, { foreignKey: 'prestadorId', as: 'horarios' });
 db.PrestadorHorario.belongsTo(db.Prestador, { foreignKey: 'prestadorId', as: 'prestador' });
+
+// Paciente pertenece a un seguro (opcional)
+db.Patient.belongsTo(db.SeguroMedico, { foreignKey: 'id_seguro', as: 'seguro' });
+db.SeguroMedico.hasMany(db.Patient, { foreignKey: 'id_seguro', as: 'pacientes' });
+
+// Prestador <-> Seguro (muchos a muchos)
+db.Prestador.belongsToMany(db.SeguroMedico, {
+  through: db.PrestadorSeguro,
+  foreignKey: 'id_prestador',
+  otherKey: 'id_seguro',
+  as: 'seguros'
+});
+db.SeguroMedico.belongsToMany(db.Prestador, {
+  through: db.PrestadorSeguro,
+  foreignKey: 'id_seguro',
+  otherKey: 'id_prestador',
+  as: 'prestadores'
+});
+
+// Seguro <-> Servicio (muchos a muchos)
+db.SeguroMedico.belongsToMany(db.Servicio, {
+  through: db.ServicioSeguro,
+  foreignKey: 'id_seguro',
+  otherKey: 'id_servicio',
+  as: 'servicios'
+});
+db.Servicio.belongsToMany(db.SeguroMedico, {
+  through: db.ServicioSeguro,
+  foreignKey: 'id_servicio',
+  otherKey: 'id_seguro',
+  as: 'seguros'
+});
+
+// Cobertura: puedes acceder por db.CoberturaSeguro.findOne({ where: { id_seguro, id_servicio } })
 
 module.exports = db;
