@@ -68,14 +68,16 @@
   z-index: 1050; /* Para que aparezca sobre otros elementos */
 }
 
-/* Botón "azul" (verde oscuro, según tu diseño original) */
-.btn-azul {
-  background-color: #275950 !important;
+.btn-primary-custom {
+  background-color: #275950 !important; /* Color principal */
   border-color: #275950 !important;
   color: #fff !important;
+  font-weight: 500;
 }
-.btn-azul:hover, .btn-azul:focus {
-  background-color: #1d403a !important;
+
+.btn-primary-custom:hover, 
+.btn-primary-custom:focus {
+  background-color: #1d403a !important; /* Color más oscuro para el hover */
   border-color: #1d403a !important;
 }
 

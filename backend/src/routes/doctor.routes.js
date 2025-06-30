@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(authJwt.verifyToken);
 
 // Rutas para prestadores (doctores)
+router.post('/', authJwt.isAdmin, controller.createPrestador);
 router.get('/', controller.getAllPrestadores);
 router.get('/sector/:sectorId', controller.getPrestadoresBySector);
 router.get('/:id', controller.getPrestadorById);

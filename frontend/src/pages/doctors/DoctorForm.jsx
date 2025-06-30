@@ -1,24 +1,24 @@
 import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Card, Form, Button, Row, Col, Alert } from 'react-bootstrap';
+import { Container, Card, Form, Button, Row, Col, Alert, Spinner } from 'react-bootstrap';
+import Select from 'react-select';
 import api from '../../utils/api';
 import { AuthContext } from '../../context/AuthContextValue';
 import ServicioService from '../../services/ServicioService';
 import PrestadorServicioService from '../../services/PrestadorServicioService';
+import styles from './Doctors.module.css';
 
 const DoctorForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useContext(AuthContext);
+  const { user: authUser } = useContext(AuthContext);
   const isEditMode = !!id;
-  
+
   const [doctor, setDoctor] = useState({
-    name: '',
-    email: '',
-    phone: '',
+    userId: '',
     specialtyId: '',
     sectorId: '',
-    userId: '',
+    licenseNumber: '',
     active: true,
     notes: ''
   });
@@ -29,123 +29,129 @@ const DoctorForm = () => {
   const [servicios, setServicios] = useState([]);
   const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [doctorName, setDoctorName] = useState('');
 
   useEffect(() => {
     const fetchInitialData = async () => {
+      setPageLoading(true);
       try {
-        // Cargar especialidades
-        const specialtiesResponse = await api.get('/specialties');
-        setSpecialties(specialtiesResponse.data);
+        // --- CORRECCIÓN APLICADA AQUÍ ---
+        const [specialtiesRes, servicesRes, sectorsRes, usersRes] = await Promise.all([
+          api.get('/specialties?size=1000').then(res => res.data.items || []),
+          ServicioService.getAll().then(res => res.data),
+          api.get('/sectors?size=1000').then(res => res.data.items || []),
+          api.get('/users?role=doctor&unassigned=true').then(res => res.data.items || [])
+        ]);
+        // --- FIN DE LA CORRECCIÓN ---
 
-        // Cargar sectores (si es admin general) o usar el sector del usuario (si es admin de sector)
-        if (user.role === 'admin') {
-          const sectorsResponse = await api.get('/sectors');
-          setSectors(sectorsResponse.data);
-        } else if (user.role === 'sector_admin' && user.sectorId) {
-          const sectorResponse = await api.get(`/sectors/${user.sectorId}`);
-          setSectors([sectorResponse.data]);
-          // Pre-seleccionar el sector del admin
-          setDoctor(prev => ({ ...prev, sectorId: user.sectorId }));
-        }
+        setSpecialties(specialtiesRes);
+        setServicios(servicesRes);
+        setUsers(usersRes);
 
-        // Cargar usuarios con rol 'doctor' que no tienen asignado un doctor
-        const usersResponse = await api.get('/users?role=doctor&unassigned=true');
-        setUsers(usersResponse.data);
-
-        // Cargar servicios
-        const serviciosResponse = await ServicioService.getAll();
-        setServicios(serviciosResponse.data);
-        // Si es edición, cargar servicios asignados
-        if (isEditMode) {
-          const serviciosPrestador = await PrestadorServicioService.getServicios(id);
-          setServiciosSeleccionados(serviciosPrestador.data.map(s => s.id_servicio));
+        if (authUser.role === 'admin') {
+          setSectors(sectorsRes);
+        } else if (authUser.role === 'sector_admin' && authUser.sectorId) {
+          const userSector = sectorsRes.find(s => s.id === authUser.sectorId);
+          setSectors(userSector ? [userSector] : []);
+          setDoctor(prev => ({ ...prev, sectorId: authUser.sectorId }));
         }
         
         if (isEditMode) {
-          await fetchDoctorData();
+          await fetchDoctorData(usersRes);
         }
+
       } catch (err) {
         console.error('Error fetching initial data:', err);
         setError('Error al cargar los datos iniciales');
+      } finally {
+        setPageLoading(false);
       }
     };
-
     fetchInitialData();
-  }, [id, isEditMode, user.role, user.sectorId]);
+  }, [id, isEditMode, authUser.role, authUser.sectorId]);
 
-  const fetchDoctorData = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get(`/doctors/${id}`);
-      setDoctor(response.data);
-      
-      // Si el doctor ya tiene un usuario asignado, cargarlo también
-      if (response.data.userId) {
-        const userResponse = await api.get(`/users/${response.data.userId}`);
-        setUsers(prev => [userResponse.data, ...prev]);
+  const fetchDoctorData = async (initialUsers) => {
+      try {
+        const [doctorRes, serviciosPrestador] = await Promise.all([
+          api.get(`/doctors/${id}`),
+          PrestadorServicioService.getServicios(id)
+        ]);
+        const doctorData = doctorRes.data;
+        setDoctor(doctorData);
+        setServiciosSeleccionados(serviciosPrestador.data.map(s => s.id_servicio || s.id));
+        
+        if (doctorData.userId) {
+          const userRes = await api.get(`/users/${doctorData.userId}`);
+          setDoctorName(userRes.data.fullName);
+          const userExists = initialUsers.some(u => u.id === userRes.data.id);
+          if (!userExists) {
+            setUsers(prev => [userRes.data, ...prev]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching doctor:', err);
+        setError('Error al cargar los datos del doctor');
       }
-    } catch (err) {
-      console.error('Error fetching doctor:', err);
-      setError('Error al cargar los datos del doctor');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setDoctor({
-      ...doctor,
-      [name]: type === 'checkbox' ? checked : value
-    });
+    setDoctor(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleSelectChange = (name, selectedOption) => {
+    setDoctor(prev => ({ ...prev, [name]: selectedOption ? selectedOption.value : '' }));
   };
 
   const handleServiciosChange = (e) => {
-    const value = parseInt(e.target.value);
-    setServiciosSeleccionados(prev =>
-      prev.includes(value)
-        ? prev.filter(id => id !== value)
-        : [...prev, value]
-    );
+      const value = parseInt(e.target.value);
+      setServiciosSeleccionados(prev =>
+        prev.includes(value) ? prev.filter(id => id !== value) : [...prev, value]
+      );
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      let doctorId = id;
-      if (isEditMode) {
-        await api.put(`/doctors/${id}`, doctor);
-      } else {
-        const res = await api.post('/doctors', doctor);
-        doctorId = res.data.id;
+      e.preventDefault();
+      setLoading(true);
+      setError('');
+      setSuccess('');
+  
+      try {
+        let doctorId = id;
+        if (isEditMode) {
+          await api.put(`/doctors/${id}`, doctor);
+        } else {
+          const res = await api.post('/doctors', doctor);
+          doctorId = res.data.id;
+        }
+        await PrestadorServicioService.addServicios(doctorId, serviciosSeleccionados);
+        setSuccess('Perfil de doctor guardado correctamente.');
+        setTimeout(() => navigate('/doctors'), 2000);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Error al guardar el perfil del doctor.');
+      } finally {
+        setLoading(false);
       }
-      // Guardar servicios seleccionados
-      await PrestadorServicioService.addServicios(doctorId, serviciosSeleccionados);
-      setSuccess('Doctor y servicios guardados correctamente');
-      setTimeout(() => {
-        navigate('/doctors');
-      }, 2000);
-    } catch (err) {
-      console.error('Error saving doctor:', err);
-      setError(err.response?.data?.message || 'Error al guardar el doctor');
-    } finally {
-      setLoading(false);
-    }
   };
+
+  if (pageLoading) {
+    return <Container className="d-flex justify-content-center align-items-center" style={{ height: '80vh' }}><Spinner animation="border" /></Container>;
+  }
+
+  const userOptions = users.map(u => ({ value: u.id, label: `${u.fullName} (${u.email})`}));
+  const specialtyOptions = specialties.map(s => ({ value: s.id, label: s.name }));
+  const sectorOptions = sectors.map(s => ({ value: s.id, label: s.name }));
 
   return (
     <Container className="py-4">
-      <Card>
-        <Card.Header>
-          <h2>{isEditMode ? 'Editar Doctor' : 'Nuevo Doctor'}</h2>
+      <Card className={styles.doctorCard}>
+        <Card.Header className={styles.cardHeader}>
+          <h2>{isEditMode ? `Editar Perfil: ${doctorName}` : 'Nuevo Perfil de Doctor'}</h2>
         </Card.Header>
-        <Card.Body>
+        <Card.Body className="p-4">
           {error && <Alert variant="danger">{error}</Alert>}
           {success && <Alert variant="success">{success}</Alert>}
           
@@ -153,25 +159,25 @@ const DoctorForm = () => {
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Nombre Completo</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="name"
-                    value={doctor.name}
-                    onChange={handleChange}
-                    required
+                  <Form.Label className={styles.formLabel}>Usuario del Sistema</Form.Label>
+                  <Select
+                    options={userOptions}
+                    value={userOptions.find(o => o.value === doctor.userId) || null}
+                    onChange={(opt) => handleSelectChange('userId', opt)}
+                    placeholder="Seleccione un usuario..."
+                    isClearable
                   />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Email</Form.Label>
-                  <Form.Control
-                    type="email"
-                    name="email"
-                    value={doctor.email}
-                    onChange={handleChange}
-                    required
+                  <Form.Label className={styles.formLabel}>Especialidad</Form.Label>
+                   <Select
+                    options={specialtyOptions}
+                    value={specialtyOptions.find(o => o.value === doctor.specialtyId) || null}
+                    onChange={(opt) => handleSelectChange('specialtyId', opt)}
+                    placeholder="Seleccione una especialidad..."
+                    isClearable
                   />
                 </Form.Group>
               </Col>
@@ -180,126 +186,46 @@ const DoctorForm = () => {
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Teléfono</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="phone"
-                    value={doctor.phone || ''}
-                    onChange={handleChange}
+                  <Form.Label className={styles.formLabel}>Sector</Form.Label>
+                  <Select
+                    options={sectorOptions}
+                    value={sectorOptions.find(o => o.value === doctor.sectorId) || null}
+                    onChange={(opt) => handleSelectChange('sectorId', opt)}
+                    placeholder="Seleccione un sector..."
+                    isDisabled={authUser.role === 'sector_admin'}
+                    isClearable
                   />
                 </Form.Group>
               </Col>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Usuario del Sistema</Form.Label>
-                  <Form.Select
-                    name="userId"
-                    value={doctor.userId || ''}
-                    onChange={handleChange}
-                  >
-                    <option value="">Sin usuario asignado</option>
-                    {users.map(user => (
-                      <option key={user.id} value={user.id}>
-                        {user.fullName} ({user.email})
-                      </option>
-                    ))}
-                  </Form.Select>
+                  <Form.Label className={styles.formLabel}>Nº de Matrícula / Licencia</Form.Label>
+                  <Form.Control type="text" name="licenseNumber" value={doctor.licenseNumber} onChange={handleChange} required className={styles.formControl} />
                 </Form.Group>
               </Col>
             </Row>
-
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Especialidad</Form.Label>
-                  <Form.Select
-                    name="specialtyId"
-                    value={doctor.specialtyId || ''}
-                    onChange={handleChange}
-                    required
-                  >
-                    <option value="">Seleccione una especialidad</option>
-                    {specialties.map(specialty => (
-                      <option key={specialty.id} value={specialty.id}>
-                        {specialty.name}
-                      </option>
+            
+            <Form.Group className="mb-3">
+              <Form.Label className={styles.formLabel}>Notas Internas</Form.Label>
+              <Form.Control as="textarea" name="notes" value={doctor.notes || ''} onChange={handleChange} rows={2} className={styles.formControl} />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+                <Form.Label className={styles.formLabel}>Servicios Prestados</Form.Label>
+                <div className="p-3 border rounded" style={{maxHeight: '150px', overflowY: 'auto'}}>
+                    {servicios.map(servicio => (
+                    <Form.Check key={servicio.id || servicio.id_servicio} type="checkbox" label={`${servicio.nombre_servicio} ($${servicio.precio}, ${servicio.tiempo} min)`} value={servicio.id || servicio.id_servicio} checked={serviciosSeleccionados.includes(servicio.id || servicio.id_servicio)} onChange={handleServiciosChange} />
                     ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Sector</Form.Label>
-                  <Form.Select
-                    name="sectorId"
-                    value={doctor.sectorId || ''}
-                    onChange={handleChange}
-                    disabled={user.role === 'sector_admin'}
-                    required
-                  >
-                    <option value="">Seleccione un sector</option>
-                    {sectors.map(sector => (
-                      <option key={sector.id} value={sector.id}>
-                        {sector.name}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Notas</Form.Label>
-              <Form.Control
-                as="textarea"
-                name="notes"
-                value={doctor.notes || ''}
-                onChange={handleChange}
-                rows={3}
-              />
+                </div>
+            </Form.Group>
+            
+            <Form.Group className="mb-4">
+              <Form.Check type="switch" label="Activo" name="active" checked={doctor.active} onChange={handleChange} />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                label="Doctor Activo"
-                name="active"
-                checked={doctor.active}
-                onChange={handleChange}
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Servicios que presta</Form.Label>
-              <div>
-                {servicios.map(servicio => (
-                  <Form.Check
-                    key={servicio.id_servicio ? `servicio-${servicio.id_servicio}` : `servicio-${servicio.id}`}
-                    type="checkbox"
-                    label={`${servicio.nombre_servicio} ($${servicio.precio}, ${servicio.tiempo} min)`}
-                    value={servicio.id_servicio}
-                    checked={serviciosSeleccionados.includes(servicio.id_servicio)}
-                    onChange={handleServiciosChange}
-                  />
-                ))}
-              </div>
-            </Form.Group>
-
-            <div className="d-flex justify-content-end gap-2">
-              <Button 
-                variant="secondary" 
-                onClick={() => navigate('/doctors')}
-                disabled={loading}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                variant="primary" 
-                type="submit"
-                disabled={loading}
-              >
-                {loading ? 'Guardando...' : 'Guardar'}
-              </Button>
+            <div className={styles.buttonGroup}>
+              <Button variant="secondary" onClick={() => navigate('/doctors')} disabled={loading}>Cancelar</Button>
+              <Button type="submit" className={styles.primaryButton} disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</Button>
             </div>
           </Form>
         </Card.Body>

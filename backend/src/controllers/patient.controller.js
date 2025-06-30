@@ -1,10 +1,56 @@
 const db = require('../models');
 const Patient = db.Patient;
+const { Op } = db.Sequelize;
 
-// Crear un paciente
-exports.createPatient = async (req, res) => {
+// --- INICIO DE LA SECCIÓN MODIFICADA ---
+
+// Funciones de ayuda para la paginación
+const getPagination = (page, size) => {
+  const limit = size ? +size : 10; // 10 pacientes por página por defecto
+  const offset = page ? (page - 1) * limit : 0;
+  return { limit, offset };
+};
+
+const getPagingData = (data, page, limit) => {
+  const { count: totalItems, rows: items } = data;
+  const currentPage = page ? +page : 1;
+  const totalPages = Math.ceil(totalItems / limit);
+  return { totalItems, items, totalPages, currentPage };
+};
+
+// Reemplaza getAllPatients y searchPatients con esta única función
+exports.findAll = (req, res) => {
+  const { page, size, search } = req.query;
+  const { limit, offset } = getPagination(page, size);
+
+  // La condición busca en 'fullName' O en 'documentId'
+  // Si no hay término de búsqueda, la condición es nula y trae todos los pacientes.
+  const condition = search
+    ? {
+        [Op.or]: [
+          { fullName: { [Op.iLike]: `%${search}%` } },
+          { documentId: { [Op.iLike]: `%${search}%` } }
+        ]
+      }
+    : null;
+
+  Patient.findAndCountAll({ where: condition, limit, offset, order: [['fullName', 'ASC']] })
+    .then(data => {
+      const response = getPagingData(data, page, limit);
+      res.status(200).send(response);
+    })
+    .catch(err => {
+      res.status(500).send({
+        message: err.message || "Ocurrió un error al recuperar los pacientes."
+      });
+    });
+};
+
+// --- FIN DE LA SECCIÓN MODIFICADA ---
+
+// Crear un paciente (sin cambios)
+exports.create = async (req, res) => {
   try {
-    // Verificar si ya existe un paciente con ese número de documento
     const existingPatient = await Patient.findOne({
       where: { documentId: req.body.documentId }
     });
@@ -15,19 +61,7 @@ exports.createPatient = async (req, res) => {
       });
     }
     
-    const patient = await Patient.create({
-      fullName: req.body.fullName,
-      documentId: req.body.documentId,
-      dateOfBirth: req.body.dateOfBirth,
-      gender: req.body.gender,
-      address: req.body.address,
-      phone: req.body.phone,
-      email: req.body.email,
-      insurance: req.body.insurance,
-      insuranceNumber: req.body.insuranceNumber,
-      allergies: req.body.allergies,
-      medicalHistory: req.body.medicalHistory
-    });
+    const patient = await Patient.create(req.body);
     
     res.status(201).json({
       message: 'Paciente creado exitosamente',
@@ -40,57 +74,8 @@ exports.createPatient = async (req, res) => {
   }
 };
 
-// Obtener todos los pacientes
-exports.getAllPatients = async (req, res) => {
-  try {
-    const patients = await Patient.findAll();
-    
-    res.status(200).json(patients);
-  } catch (error) {
-    res.status(500).json({
-      message: error.message
-    });
-  }
-};
-
-// Buscar pacientes
-exports.searchPatients = async (req, res) => {
-  try {
-    const { term } = req.query;
-    
-    if (!term) {
-      return res.status(400).json({
-        message: 'Se requiere un término de búsqueda'
-      });
-    }
-    
-    const patients = await Patient.findAll({
-      where: {
-        [db.Sequelize.Op.or]: [
-          {
-            fullName: {
-              [db.Sequelize.Op.iLike]: `%${term}%`
-            }
-          },
-          {
-            documentId: {
-              [db.Sequelize.Op.iLike]: `%${term}%`
-            }
-          }
-        ]
-      }
-    });
-    
-    res.status(200).json(patients);
-  } catch (error) {
-    res.status(500).json({
-      message: error.message
-    });
-  }
-};
-
-// Obtener paciente por ID
-exports.getPatientById = async (req, res) => {
+// Obtener paciente por ID (sin cambios)
+exports.findById = async (req, res) => {
   try {
     const patient = await Patient.findByPk(req.params.id);
     
@@ -108,8 +93,8 @@ exports.getPatientById = async (req, res) => {
   }
 };
 
-// Actualizar paciente
-exports.updatePatient = async (req, res) => {
+// Actualizar paciente (sin cambios)
+exports.update = async (req, res) => {
   try {
     const patientId = req.params.id;
     const patient = await Patient.findByPk(patientId);
@@ -120,7 +105,6 @@ exports.updatePatient = async (req, res) => {
       });
     }
     
-    // Si se está cambiando el número de documento, verificar que no exista otro con ese número
     if (req.body.documentId && req.body.documentId !== patient.documentId) {
       const existingPatient = await Patient.findOne({
         where: { documentId: req.body.documentId }
@@ -133,22 +117,7 @@ exports.updatePatient = async (req, res) => {
       }
     }
     
-    const patientData = {
-      fullName: req.body.fullName || patient.fullName,
-      documentId: req.body.documentId || patient.documentId,
-      dateOfBirth: req.body.dateOfBirth || patient.dateOfBirth,
-      gender: req.body.gender || patient.gender,
-      address: req.body.address || patient.address,
-      phone: req.body.phone || patient.phone,
-      email: req.body.email || patient.email,
-      insurance: req.body.insurance || patient.insurance,
-      insuranceNumber: req.body.insuranceNumber || patient.insuranceNumber,
-      allergies: req.body.allergies || patient.allergies,
-      medicalHistory: req.body.medicalHistory || patient.medicalHistory,
-      active: req.body.active !== undefined ? req.body.active : patient.active
-    };
-    
-    await patient.update(patientData);
+    await patient.update(req.body);
     
     res.status(200).json({
       message: 'Paciente actualizado exitosamente'
@@ -160,8 +129,8 @@ exports.updatePatient = async (req, res) => {
   }
 };
 
-// Eliminar paciente
-exports.deletePatient = async (req, res) => {
+// Eliminar paciente (sin cambios)
+exports.delete = async (req, res) => {
   try {
     const patientId = req.params.id;
     const patient = await Patient.findByPk(patientId);
@@ -172,7 +141,6 @@ exports.deletePatient = async (req, res) => {
       });
     }
     
-    // Verificar si tiene citas
     const appointments = await db.Appointment.findOne({
       where: { patientId: patientId }
     });

@@ -1,0 +1,40 @@
+/* frontend/src/pages/admin/sectors/Sectors.module.css */
+.sectorCard {
+  background: #fff;
+  border-radius: 1rem;
+  border: none;
+}
+.cardHeader {
+  background-color: #fff !important;
+  border-bottom: 2px solid #f0f0f0 !important;
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cardHeader h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #275950;
+  margin-bottom: 0;
+}
+.primaryButton {
+  background-color: #275950 !important;
+  border-color: #275950 !important;
+  color: #fff !important;
+  font-weight: 500;
+}
+.primaryButton:hover {
+  background-color: #1d403a !important;
+  border-color: #1d403a !important;
+}
+.sectorTable th, .sectorTable td { vertical-align: middle; padding: 1rem; }
+.sectorTable th { color: #275950; font-weight: 600; }
+.sectorTable tbody tr:hover { background-color: #f7fdfd; }
+.actionButtons { display: flex; gap: 0.5rem; }
+.formLabel { color: #2A8C82; font-weight: 500; margin-bottom: 0.5rem; }
+.formControl, .formSelect { border-radius: 0.5rem; border: 1px solid #ced4da; }
+.buttonGroup { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; }
+.paginationContainer { display: flex; justify-content: center; margin-top: 1.5rem; }
+.pagination .page-link { color: #275950; border-radius: 0.5rem !important; }
+.pagination .page-item.active .page-link { background-color: #275950; border-color: #275950; color: #fff; }

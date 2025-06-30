@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { Row, Col, Card, Table, Form, Button, Badge, Pagination, Alert, Spinner, Modal } from 'react-bootstrap';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContextValue';
-import { AppointmentService, DoctorService, SectorService } from '../../utils/api';
+import { AppointmentService, DoctorService, SectorService, SpecialtyService } from '../../utils/api'; // Asegúrate de que SpecialtyService esté importado
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import Select from 'react-select';
@@ -17,6 +17,7 @@ const Appointments = () => {
   const [success, setSuccess] = useState('');
   const [doctors, setDoctors] = useState([]);
   const [sectors, setSectors] = useState([]);
+  const [specialties, setSpecialties] = useState([]); // Añadido estado para especialidades
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(10);
@@ -43,19 +44,19 @@ const Appointments = () => {
 
   useEffect(() => {
     const fetchInitialData = async () => {
-      setLoading(true);
       try {
-        if (isAdmin || isSectorAdmin) {
-          SectorService.getAll().then(res => setSectors(res.data));
-        }
-        let doctorsPromise;
-        if (isSectorAdmin && user.role === 'sector_admin' && user.sectorId) {
-          doctorsPromise = DoctorService.getBySector(user.sectorId);
-        } else {
-          doctorsPromise = DoctorService.getAll();
-        }
-        doctorsPromise.then(res => setDoctors(res.data));
-        
+        // --- CORRECCIÓN APLICADA AQUÍ ---
+        const [sectorsRes, doctorsRes, specialtiesRes] = await Promise.all([
+            SectorService.getAll({ params: { size: 1000 } }),
+            DoctorService.getAll(),
+            SpecialtyService.getAll({ params: { size: 1000 } })
+        ]);
+
+        setSectors(sectorsRes.data.items || []);
+        setDoctors(doctorsRes.data || []);
+        setSpecialties(specialtiesRes.data.items || []);
+        // --- FIN DE LA CORRECCIÓN ---
+
         const today = new Date();
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(today.getDate() - 30);
@@ -76,7 +77,7 @@ const Appointments = () => {
       }
     };
     fetchInitialData();
-  }, [user, isAdmin, isSectorAdmin, isDoctor]);
+  }, []);
 
   const fetchAppointments = async (page = 1, customFilters = null) => {
     setLoading(true);
@@ -112,8 +113,7 @@ const Appointments = () => {
     }
   };
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
+  const handleFilterChange = (name, value) => {
     setFilters(prev => ({ ...prev, [name]: value }));
   };
 
@@ -238,13 +238,13 @@ const Appointments = () => {
               <Col lg={2} md={4} sm={6} className="mb-3">
                 <Form.Group>
                   <Form.Label className="appointments-filter-label"><i className="bi bi-calendar-date me-1"></i>Desde</Form.Label>
-                  <Form.Control type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} className="appointments-filter-select" />
+                  <Form.Control type="date" name="startDate" value={filters.startDate} onChange={(e) => handleFilterChange(e.target.name, e.target.value)} className="appointments-filter-select" />
                 </Form.Group>
               </Col>
               <Col lg={2} md={4} sm={6} className="mb-3">
                 <Form.Group>
                   <Form.Label className="appointments-filter-label"><i className="bi bi-calendar-date me-1"></i>Hasta</Form.Label>
-                  <Form.Control type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} className="appointments-filter-select" />
+                  <Form.Control type="date" name="endDate" value={filters.endDate} onChange={(e) => handleFilterChange(e.target.name, e.target.value)} className="appointments-filter-select" />
                 </Form.Group>
               </Col>
               {!isDoctor && (
@@ -255,7 +255,7 @@ const Appointments = () => {
                         classNamePrefix="custom-select"
                         className="custom-select-container"
                         options={doctors.map(doctor => ({ value: doctor.id, label: doctor.user?.fullName || `Doctor ID: ${doctor.id}` }))}
-                        onChange={selectedOption => handleFilterChange({ target: { name: 'prestadorId', value: selectedOption ? selectedOption.value : '' } })}
+                        onChange={selectedOption => handleFilterChange('prestadorId', selectedOption ? selectedOption.value : '')}
                         value={doctors.map(d => ({ value: d.id, label: d.user?.fullName })).find(d => String(d.value) === String(filters.prestadorId)) || null}
                         isClearable
                         isSearchable
@@ -268,7 +268,7 @@ const Appointments = () => {
                 <Col lg={2} md={4} sm={6} className="mb-3">
                   <Form.Group>
                     <Form.Label className="appointments-filter-label"><i className="bi bi-diagram-3 me-1"></i>Sector</Form.Label>
-                    <Form.Select name="sectorId" value={filters.sectorId} onChange={handleFilterChange} className="appointments-filter-select">
+                    <Form.Select name="sectorId" value={filters.sectorId} onChange={(e) => handleFilterChange(e.target.name, e.target.value)} className="appointments-filter-select">
                       <option value="">Todos</option>
                       {sectors.map(sector => (<option key={sector.id} value={sector.id}>{sector.name}</option>))}
                     </Form.Select>
@@ -278,7 +278,7 @@ const Appointments = () => {
               <Col lg={2} md={4} sm={6} className="mb-3">
                 <Form.Group>
                   <Form.Label className="appointments-filter-label"><i className="bi bi-info-circle me-1"></i>Estado</Form.Label>
-                  <Form.Select name="status" value={filters.status} onChange={handleFilterChange} className="appointments-filter-select">
+                  <Form.Select name="status" value={filters.status} onChange={(e) => handleFilterChange(e.target.name, e.target.value)} className="appointments-filter-select">
                     <option value="">Todos</option>
                     <option value="scheduled">Programada</option>
                     <option value="completed">Completada</option>
@@ -289,7 +289,7 @@ const Appointments = () => {
               </Col>
               <Col lg={2} md={4} sm={12} className="d-flex align-items-end mb-3">
                 <div className="d-grid gap-2 w-100">
-                  <Button variant="primary" type="submit" className="btn-azul d-flex align-items-center justify-content-center"><i className="bi bi-search me-2"></i>Filtrar</Button>
+                  <Button variant="primary" type="submit" className="btn-primary-custom d-flex align-items-center justify-content-center"><i className="bi bi-search me-2"></i>Filtrar</Button>
                 </div>
               </Col>
               <Col lg={2} md={4} sm={12} className="d-flex align-items-end mb-3">
@@ -324,7 +324,16 @@ const Appointments = () => {
               </Table>
             </div>
           ) : (
-            <div className="text-center py-5"><i className="bi bi-calendar-x appointments-empty-icon"></i><p className="mt-3 lead">No se encontraron citas con los filtros seleccionados</p><Button variant="primary" onClick={handleResetFilters} className="d-flex align-items-center"><i className="bi bi-arrow-clockwise me-2"></i>Mostrar todas las citas</Button></div>
+            <div className="text-center py-5 d-flex flex-column align-items-center">
+                <i className="bi bi-calendar-x appointments-empty-icon"></i>
+                <p className="mt-3 lead">No se encontraron citas con los filtros seleccionados</p>
+                <Button 
+                  onClick={handleResetFilters} 
+                  className="d-flex align-items-center btn-primary-custom"
+                >
+                  <i className="bi bi-arrow-clockwise me-2"></i>Mostrar todas las citas
+                </Button>
+            </div>
           )}
           {totalPages > 1 && renderPagination()}
         </Card.Body>

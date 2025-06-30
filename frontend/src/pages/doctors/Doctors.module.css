@@ -1,0 +1,80 @@
+.doctorCard {
+  background: #fff;
+  border-radius: 1rem;
+  border: none;
+}
+
+.cardHeader {
+  background-color: #fff !important;
+  border-bottom: 2px solid #f0f0f0 !important;
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cardHeader h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #275950;
+  margin-bottom: 0;
+}
+
+.primaryButton {
+  background-color: #275950 !important;
+  border-color: #275950 !important;
+  color: #fff !important;
+  font-weight: 500;
+}
+
+.primaryButton:hover {
+  background-color: #1d403a !important;
+  border-color: #1d403a !important;
+}
+
+.doctorTable th,
+.doctorTable td {
+  vertical-align: middle;
+  padding: 1rem;
+}
+
+.doctorTable th {
+  color: #275950;
+  font-weight: 600;
+}
+
+.doctorTable tbody tr:hover {
+  background-color: #f7fdfd;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.actionButtons .btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+/* --- NUEVO: Estilos para los filtros de búsqueda --- */
+.filterInput {
+  border-color: #275950 !important;
+  background-color: #f8fafb !important;
+  color: #275950 !important;
+  font-weight: 500;
+  box-shadow: none !important;
+  border-radius: 0.5rem !important;
+}
+
+.filterInput::placeholder {
+  color: #275950;
+  opacity: 0.7;
+}
+
+.filterInput:focus {
+  border-color: #1d403a !important;
+  box-shadow: 0 0 0 0.2rem rgba(39, 89, 80, 0.15) !important;
+  background-color: #e0f7fa !important;
+}

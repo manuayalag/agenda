@@ -64,12 +64,19 @@ function useAppointmentForm() {
         const fetchCoreData = async () => {
             dispatch({ type: 'SET_LOADING', payload: { initial: true } });
             try {
-                const [patients, doctors, specialties] = await Promise.all([
-                    PatientService.getAll().then(res => res.data),
-                    DoctorService.getAll().then(res => res.data),
-                    SpecialtyService.getAll().then(res => res.data)
+                // --- CORRECCIÓN APLICADA AQUÍ ---
+                const [patientsRes, doctorsRes, specialtiesRes] = await Promise.all([
+                    PatientService.getAll({ params: { size: 10000 } }), // Pedimos todos los pacientes
+                    DoctorService.getAll(),
+                    SpecialtyService.getAll({ params: { size: 1000 } }) // Pedimos todas las especialidades
                 ]);
-                dispatch({ type: 'SET_INITIAL_DATA', payload: { patients, doctors, specialties } });
+                
+                dispatch({ type: 'SET_INITIAL_DATA', payload: { 
+                    patients: patientsRes.data.items || [], 
+                    doctors: doctorsRes.data, 
+                    specialties: specialtiesRes.data.items || [] 
+                }});
+                // --- FIN DE LA CORRECCIÓN ---
 
                 if (id) {
                     const appointment = await AppointmentService.getById(id).then(res => res.data);
@@ -88,8 +95,12 @@ function useAppointmentForm() {
                         dispatch({ type: 'SET_FIELD', payload: { name: key, value } });
                     }
                 }
-            } catch (err) { dispatch({ type: 'SET_ERROR', payload: 'Error al cargar datos.' });
-            } finally { dispatch({ type: 'SET_LOADING', payload: { initial: false } }); }
+            } catch (err) { 
+                console.error("Error al cargar datos iniciales:", err);
+                dispatch({ type: 'SET_ERROR', payload: 'Error al cargar datos iniciales.' });
+            } finally { 
+                dispatch({ type: 'SET_LOADING', payload: { initial: false } }); 
+            }
         }
         fetchCoreData();
     }, [id]);
@@ -199,40 +210,16 @@ const AppointmentForm = () => {
     );
 
     const tileClassName = useCallback(({ date, view }) => {
-        // Solo aplicar clases en la vista mensual y si se ha seleccionado un doctor y un servicio
-        if (view !== 'month' || !formData.prestadorId || !formData.servicioId) {
-            return null;
-        }
-        
+        if (view !== 'month' || !formData.prestadorId || !formData.servicioId) return null;
         const dateStr = date.toISOString().split('T')[0];
         const dayStatus = monthlyAvailability[dateStr];
-
-        // Regla 1: Si el backend dice que el día está lleno o no es laborable, es "no disponible".
-        if (dayStatus === 'FULL' || dayStatus === 'NON_WORKING') {
-            return 'day-unavailable';
-        }
-
-        // Regla 2: Si el backend dice que el día está disponible...
+        if (dayStatus === 'FULL' || dayStatus === 'NON_WORKING') return 'day-unavailable';
         if (dayStatus === 'AVAILABLE') {
-            // ...pero es el día que hemos seleccionado y el cálculo de slots ha terminado y no hay ninguno...
-            if (formData.date === dateStr && !status.loading.slots && lists.dynamicSlots.length === 0) {
-                // ...entonces en realidad es "no disponible".
-                return 'day-unavailable';
-            }
-            // De lo contrario, sí está disponible.
+            if (formData.date === dateStr && !status.loading.slots && lists.dynamicSlots.length === 0) return 'day-unavailable';
             return 'day-available';
         }
-
-        // Si no hay información, no se aplica ninguna clase.
         return null;
-    }, [
-        monthlyAvailability, 
-        lists.dynamicSlots.length, 
-        formData.date, 
-        formData.prestadorId, 
-        formData.servicioId, 
-        status.loading.slots
-    ]);
+    }, [monthlyAvailability, lists.dynamicSlots.length, formData.date, formData.prestadorId, formData.servicioId, status.loading.slots]);
 
     if (status.loading.initial) {
         return <Container className="text-center py-5"><Spinner animation="border" /></Container>;
