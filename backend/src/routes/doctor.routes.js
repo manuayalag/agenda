@@ -1,4 +1,4 @@
-const controller = require('../controllers/doctor.controller');
+const controller = require('../controllers/prestador.controller');
 const { authJwt } = require('../middleware');
 const express = require('express');
 const router = express.Router();

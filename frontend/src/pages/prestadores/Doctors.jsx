@@ -3,7 +3,7 @@ import { Container, Card, Table, Button, Badge, Modal, Form, Row, Col, Spinner }
 import { Link } from 'react-router-dom';
 import api from '../../utils/api';
 import { AuthContext } from '../../context/AuthContextValue';
-import styles from './Doctors.module.css';
+import styles from './Doctors.module.css'; // Asegúrate de que este archivo CSS exista y tenga los estilos necesarios
 
 const Doctors = () => {
   const { user } = useContext(AuthContext);
