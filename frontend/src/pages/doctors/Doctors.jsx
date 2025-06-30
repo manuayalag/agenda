@@ -1,8 +1,9 @@
 import { useState, useEffect, useContext } from 'react';
-import { Container, Card, Table, Button, Badge, Modal } from 'react-bootstrap';
+import { Container, Card, Table, Button, Badge, Modal, Form, Row, Col, Spinner } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import api from '../../utils/api';
 import { AuthContext } from '../../context/AuthContextValue';
+import styles from './Doctors.module.css';
 
 const Doctors = () => {
   const { user } = useContext(AuthContext);
@@ -11,76 +12,112 @@ const Doctors = () => {
   const [error, setError] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [doctorToDelete, setDoctorToDelete] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [specialtyFilter, setSpecialtyFilter] = useState('');
+  const [allSpecialties, setAllSpecialties] = useState([]);
 
   useEffect(() => {
-    fetchDoctors();
-  }, []);
+    const fetchInitialData = async () => {
+      try {
+        setLoading(true);
+        const endpoint = user?.role === 'sector_admin' && user?.sectorId
+          ? `/doctors?sectorId=${user.sectorId}`
+          : '/doctors';
+        
+        // --- CORRECCIÓN APLICADA AQUÍ ---
+        const [doctorsResponse, specialtiesResponse] = await Promise.all([
+          api.get(endpoint),
+          api.get('/specialties?size=1000') // Pedimos todas las especialidades
+        ]);
 
-  const fetchDoctors = async () => {
-    try {
-      setLoading(true);
-      // Si es admin de sector, solo muestra los doctores de su sector
-      const endpoint = user?.role === 'sector_admin' && user?.sectorId 
-        ? `/doctors?sectorId=${user.sectorId}` 
-        : '/doctors';
-      const response = await api.get(endpoint);
-      console.log('Fetched doctors:', response.data);
-      setDoctors(response.data);
-      setError(null);
-    } catch (err) {
-      setError('Error al cargar doctores: ' + (err.response?.data?.message || err.message));
-      console.error('Error fetching doctors:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+        setDoctors(doctorsResponse.data);
+        // Extraemos la lista 'items' de la respuesta paginada de especialidades
+        setAllSpecialties(specialtiesResponse.data.items || []);
+        // --- FIN DE LA CORRECCIÓN ---
+
+        setError(null);
+      } catch (err) {
+        setError('Error al cargar datos: ' + (err.response?.data?.message || err.message));
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInitialData();
+  }, [user]);
 
   const handleShowDeleteModal = (doctor) => {
     setDoctorToDelete(doctor);
     setShowDeleteModal(true);
   };
 
-  const handleCloseDeleteModal = () => {
-    setShowDeleteModal(false);
-    setDoctorToDelete(null);
-  };
+  const handleCloseDeleteModal = () => setShowDeleteModal(false);
 
   const handleDeleteDoctor = async () => {
     if (!doctorToDelete) return;
-
     try {
       await api.delete(`/doctors/${doctorToDelete.id}`);
       setDoctors(doctors.filter(doctor => doctor.id !== doctorToDelete.id));
       handleCloseDeleteModal();
     } catch (err) {
       setError('Error al eliminar doctor: ' + (err.response?.data?.message || err.message));
-      console.error('Error deleting doctor:', err);
     }
   };
+
+  const filteredDoctors = doctors.filter(doctor => {
+    const nameMatch = doctor.user?.fullName?.toLowerCase().includes(searchTerm.toLowerCase());
+    const specialtyMatch = !specialtyFilter || doctor.specialty?.id === parseInt(specialtyFilter);
+    return nameMatch && specialtyMatch;
+  });
 
   if (loading) {
     return (
       <Container className="d-flex justify-content-center align-items-center" style={{ height: '80vh' }}>
-        <div className="spinner-border text-primary" role="status">
+        <Spinner animation="border" style={{ color: '#275950' }} role="status">
           <span className="visually-hidden">Cargando...</span>
-        </div>
+        </Spinner>
       </Container>
     );
   }
 
   return (
     <Container className="py-4">
-      <Card>
-        <Card.Header className="d-flex justify-content-between align-items-center">
+      <Card className={styles.doctorCard}>
+        <Card.Header className={styles.cardHeader}>
           <h2>Gestión de Doctores</h2>
-          <Link to="/doctors/add" className="btn btn-primary">
+          <Link to="/doctors/add" className={`btn ${styles.primaryButton}`}>
             <i className="bi bi-plus-circle me-2"></i>Nuevo Doctor
           </Link>
         </Card.Header>
-        <Card.Body>
+        <Card.Body className="p-4">
           {error && <div className="alert alert-danger">{error}</div>}
 
-          <Table responsive striped hover>
+          <Form className="mb-4">
+            <Row className="g-3">
+              <Col md={6}>
+                <Form.Control
+                  type="text"
+                  placeholder="Buscar por nombre..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={styles.filterInput} 
+                />
+              </Col>
+              <Col md={6}>
+                <Form.Select
+                  value={specialtyFilter}
+                  onChange={(e) => setSpecialtyFilter(e.target.value)}
+                  className={styles.filterInput}
+                >
+                  <option value="">Todas las especialidades</option>
+                  {allSpecialties.map(specialty => (
+                    <option key={specialty.id} value={specialty.id}>{specialty.name}</option>
+                  ))}
+                </Form.Select>
+              </Col>
+            </Row>
+          </Form>
+
+          <Table responsive hover className={styles.doctorTable}>
             <thead>
               <tr>
                 <th>ID</th>
@@ -88,48 +125,38 @@ const Doctors = () => {
                 <th>Especialidad</th>
                 <th>Sector</th>
                 <th>Email</th>
-                <th>Teléfono</th>
                 <th>Estado</th>
-                <th>Acciones</th>
+                <th className="text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {doctors.length === 0 ? (
+              {filteredDoctors.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center">No hay doctores disponibles</td>
+                  <td colSpan="7" className="text-center py-4">No se encontraron doctores.</td>
                 </tr>
               ) : (
-                doctors.map(doctor => (
+                filteredDoctors.map(doctor => (
                   <tr key={doctor.id}>
                     <td>{doctor.id}</td>
-                    <td>{doctor.user?.fullName || '-'}</td>
+                    <td>{doctor.user?.fullName || 'N/A'}</td>
                     <td>{doctor.specialty?.name || '-'}</td>
                     <td>{doctor.sector?.name || '-'}</td>
                     <td>{doctor.user?.email || '-'}</td>
-                    <td>{doctor.user?.phone || '-'}</td>
                     <td>
-                      {doctor.active ? (
-                        <Badge bg="success">Activo</Badge>
-                      ) : (
-                        <Badge bg="secondary">Inactivo</Badge>
-                      )}
+                      <Badge bg={doctor.active ? "success" : "secondary"}>
+                        {doctor.active ? 'Activo' : 'Inactivo'}
+                      </Badge>
                     </td>
-                    <td>
-                      <div className="d-flex gap-2">
-                        <Link to={`/doctors/edit/${doctor.id}`} className="btn btn-sm btn-warning">
-                          <i className="bi bi-pencil-fill"></i>
-                        </Link>
-                        <Link to={`/doctors/${doctor.id}/schedule`} className="btn btn-sm btn-info">
-                          <i className="bi bi-calendar-week"></i>
-                        </Link>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleShowDeleteModal(doctor)}
-                        >
-                          <i className="bi bi-trash-fill"></i>
-                        </Button>
-                      </div>
+                    <td className={styles.actionButtons}>
+                      <Link to={`/doctors/edit/${doctor.id}`} className="btn btn-sm btn-warning" title="Editar">
+                        <i className="bi bi-pencil-fill"></i>
+                      </Link>
+                      <Link to={`/doctors/${doctor.id}/schedule`} className="btn btn-sm btn-info" title="Horarios">
+                        <i className="bi bi-calendar-week"></i>
+                      </Link>
+                      <Button variant="danger" size="sm" onClick={() => handleShowDeleteModal(doctor)} title="Eliminar">
+                        <i className="bi bi-trash-fill"></i>
+                      </Button>
                     </td>
                   </tr>
                 ))
@@ -139,22 +166,16 @@ const Doctors = () => {
         </Card.Body>
       </Card>
 
-      {/* Delete Confirmation Modal */}
-      <Modal show={showDeleteModal} onHide={handleCloseDeleteModal}>
+      <Modal show={showDeleteModal} onHide={handleCloseDeleteModal} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Confirmar eliminación</Modal.Title>
+          <Modal.Title>Confirmar Eliminación</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          ¿Estás seguro que deseas eliminar al doctor <strong>{doctorToDelete?.name}</strong>?
-          Esta acción no se puede deshacer.
+          ¿Estás seguro que deseas eliminar el perfil del doctor asociado a <strong>{doctorToDelete?.user?.fullName}</strong>?
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={handleCloseDeleteModal}>
-            Cancelar
-          </Button>
-          <Button variant="danger" onClick={handleDeleteDoctor}>
-            Eliminar
-          </Button>
+          <Button variant="secondary" onClick={handleCloseDeleteModal}>Cancelar</Button>
+          <Button variant="danger" onClick={handleDeleteDoctor}>Eliminar</Button>
         </Modal.Footer>
       </Modal>
     </Container>

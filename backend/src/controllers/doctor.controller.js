@@ -5,7 +5,38 @@ const Appointment = db.Appointment;
 const PrestadorHorario = db.PrestadorHorario;
 const { Op, Sequelize } = require('sequelize');
 
-// --- FUNCIONES EXISTENTES (SIN CAMBIOS) ---
+exports.createPrestador = async (req, res) => {
+  try {
+    const { userId, specialtyId, sectorId, notes, active, licenseNumber } = req.body;
+
+    // Verificar que el usuario no esté ya asignado
+    const existingPrestador = await Prestador.findOne({ where: { userId: userId } });
+    if (existingPrestador) {
+      return res.status(400).send({ message: "Este usuario ya está asignado a otro perfil de doctor." });
+    }
+
+    // Verificar que el número de licencia no esté ya en uso
+    const existingLicense = await Prestador.findOne({ where: { licenseNumber: licenseNumber } });
+    if (existingLicense) {
+        return res.status(400).send({ message: "Este número de matrícula ya está en uso." });
+    }
+
+    const prestador = await Prestador.create({
+      userId,
+      specialtyId,
+      sectorId,
+      licenseNumber, // <-- CAMBIO: Se pasa al crear
+      notes,
+      active
+    });
+
+    res.status(201).send(prestador);
+
+  } catch (error) {
+    res.status(500).send({ message: error.message || "Ocurrió un error al crear el perfil del doctor." });
+  }
+};
+
 exports.getAllPrestadores = async (req, res) => {
   try {
     const currentUser = await db.User.findByPk(req.userId);

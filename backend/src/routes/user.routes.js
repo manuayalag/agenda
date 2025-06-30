@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(authJwt.verifyToken);
 
 // Rutas para usuarios
+router.post('/', authJwt.isAdmin, controller.create);
 router.get('/', authJwt.isAdmin, controller.getAllUsers);
 router.get('/:id', controller.getUserById);
 router.put('/:id', controller.updateUser);
