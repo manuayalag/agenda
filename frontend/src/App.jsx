@@ -24,9 +24,9 @@ import Specialties from './pages/admin/Specialties';
 import SpecialtyForm from './pages/admin/SpecialtyForm';
 
 // Doctors Pages
-import Doctors from './pages/doctors/Doctors';
-import DoctorForm from './pages/doctors/DoctorForm';
-import DoctorSchedule from './pages/doctors/DoctorSchedule';
+import Doctors from './pages/prestadores/Doctors';
+import DoctorForm from './pages/prestadores/DoctorsForm';
+import DoctorSchedule from './pages/prestadores/DoctorSchedule';
 
 // Patients Pages
 import Patients from './pages/patients/Patients';
