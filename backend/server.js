@@ -25,6 +25,7 @@ const ticketRoutes = require('./src/routes/ticket.routes');
 const prestadorRoutes = require('./src/routes/prestador.routes');
 const seguroServicioRoutes = require('./src/routes/seguro_servicio.routes');
 const servicioRoutes = require('./src/routes/servicio.routes');
+const seguroRoutes = require('./src/routes/seguro.routes'); // <--- AGREGAR ESTA LÍNEA
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -37,6 +38,7 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/prestadores', prestadorRoutes);
 app.use('/api/seguros', seguroServicioRoutes);
 app.use('/api/servicios', servicioRoutes);
+app.use('/api/seguros', seguroRoutes); // <--- AGREGAR ESTA LÍNEA ANTES O DESPUÉS DE seguroServicioRoutes
 
 // Ruta base
 app.get('/', (req, res) => {
