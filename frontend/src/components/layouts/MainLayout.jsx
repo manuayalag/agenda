@@ -1,5 +1,5 @@
 import React, { useContext, useCallback } from 'react';
-import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, Link, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import { Container, Navbar, Nav, NavDropdown } from 'react-bootstrap';
 import { AuthContext } from '../../context/AuthContextValue';
 import styles from './MainLayout.module.css';
@@ -21,9 +21,9 @@ const MainLayout = () => {
 
   return (
     <div className={`d-flex flex-column min-vh-100 ${styles.body}`}>
-      <Navbar expand="lg" variant="light" className={styles.mainNavbar}>
+      <Navbar bg="primary" variant="dark" expand="lg" className={styles.mainNavbar}>
         <Container>
-          <Navbar.Brand as={Link} to="/dashboard">
+          <Navbar.Brand as={Link} to="/">
             <i className="bi bi-hospital"></i>
             Sistema de Agendamiento Clínico
           </Navbar.Brand>
@@ -34,6 +34,33 @@ const MainLayout = () => {
               <AuthenticatedNavLink to="/dashboard" icon="bi-speedometer2">Dashboard</AuthenticatedNavLink>
               <AuthenticatedNavLink to="/appointments" icon="bi-calendar2-week">Citas</AuthenticatedNavLink>
               <AuthenticatedNavLink to="/tickets" icon="bi-ticket-detailed">Tickets</AuthenticatedNavLink>
+              
+              {/* --- NUEVOS ACCESOS --- */}
+              <NavLink
+                to="/servicios"
+                className={({ isActive }) =>
+                  `nav-link d-flex align-items-center gap-1 ${isActive ? "active" : ""}`
+                }
+              >
+                <i className="bi bi-gear"></i> Servicios
+              </NavLink>
+              <NavLink
+                to="/seguros"
+                className={({ isActive }) =>
+                  `nav-link d-flex align-items-center gap-1 ${isActive ? "active" : ""}`
+                }
+              >
+                <i className="bi bi-shield-check"></i> Seguros
+              </NavLink>
+              <NavLink
+                to="/seguros/coberturas"
+                className={({ isActive }) =>
+                  `nav-link d-flex align-items-center gap-1 ${isActive ? "active" : ""}`
+                }
+              >
+                <i className="bi bi-list-check"></i> Coberturas
+              </NavLink>
+              {/* --- FIN NUEVOS ACCESOS --- */}
               
               {isSectorAdmin && (
                 <>
