@@ -24,6 +24,7 @@ const specialtyRoutes = require('./src/routes/specialty.routes');
 const ticketRoutes = require('./src/routes/ticket.routes');
 const prestadorRoutes = require('./src/routes/prestador.routes');
 const seguroServicioRoutes = require('./src/routes/seguro_servicio.routes');
+const servicioRoutes = require('./src/routes/servicio.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -35,6 +36,7 @@ app.use('/api/specialties', specialtyRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/prestadores', prestadorRoutes);
 app.use('/api/seguros', seguroServicioRoutes);
+app.use('/api/servicios', servicioRoutes);
 
 // Ruta base
 app.get('/', (req, res) => {
