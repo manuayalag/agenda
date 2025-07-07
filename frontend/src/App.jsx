@@ -39,9 +39,9 @@ import AppointmentForm from './pages/appointments/AppointmentForm';
 // Tickets Pages
 import Tickets from './pages/tickets/Tickets';
 
-// Seguros Pages
+// Seguros & Servicios Pages
 import SegurosMedicos from './pages/seguros/SegurosMedicos';
-import SeguroCoberturas from './pages/seguros/SeguroCoberturas';
+import Servicios from './pages/servicios/Servicios';
 
 // Protect routes based on auth status and role
 const PrivateRoute = ({ children, roles = [] }) => {
@@ -62,7 +62,9 @@ const PrivateRoute = ({ children, roles = [] }) => {
   }
 
   if (roles.length > 0 && !roles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />;
+    // Para simplificar, redirigimos al dashboard si no tiene el rol.
+    // Podrías crear una página específica de "No Autorizado".
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -88,125 +90,47 @@ function App() {
 
         {/* Admin Routes */}
         <Route path="admin">
-          <Route path="users" element={
-            <PrivateRoute roles={['admin']}>
-              <Users />
-            </PrivateRoute>
-          } />
-          <Route path="users/add" element={
-            <PrivateRoute roles={['admin']}>
-              <UserForm />
-            </PrivateRoute>
-          } />
-          <Route path="users/edit/:id" element={
-            <PrivateRoute roles={['admin']}>
-              <UserForm />
-            </PrivateRoute>
-          } />
-          <Route path="sectors" element={
-            <PrivateRoute roles={['admin']}>
-              <Sectors />
-            </PrivateRoute>
-          } />
-          <Route path="sectors/add" element={
-            <PrivateRoute roles={['admin']}>
-              <SectorForm />
-            </PrivateRoute>
-          } />
-          <Route path="sectors/edit/:id" element={
-            <PrivateRoute roles={['admin']}>
-              <SectorForm />
-            </PrivateRoute>
-          } />
-          <Route path="specialties" element={
-            <PrivateRoute roles={['admin']}>
-              <Specialties />
-            </PrivateRoute>
-          } />
-          <Route path="specialties/add" element={
-            <PrivateRoute roles={['admin']}>
-              <SpecialtyForm />
-            </PrivateRoute>
-          } />
-          <Route path="specialties/edit/:id" element={
-            <PrivateRoute roles={['admin']}>
-              <SpecialtyForm />
-            </PrivateRoute>
-          } />
+          <Route path="users" element={<PrivateRoute roles={['admin']}><Users /></PrivateRoute>} />
+          <Route path="users/add" element={<PrivateRoute roles={['admin']}><UserForm /></PrivateRoute>} />
+          <Route path="users/edit/:id" element={<PrivateRoute roles={['admin']}><UserForm /></PrivateRoute>} />
+          <Route path="sectors" element={<PrivateRoute roles={['admin']}><Sectors /></PrivateRoute>} />
+          <Route path="sectors/add" element={<PrivateRoute roles={['admin']}><SectorForm /></PrivateRoute>} />
+          <Route path="sectors/edit/:id" element={<PrivateRoute roles={['admin']}><SectorForm /></PrivateRoute>} />
+          <Route path="specialties" element={<PrivateRoute roles={['admin']}><Specialties /></PrivateRoute>} />
+          <Route path="specialties/add" element={<PrivateRoute roles={['admin']}><SpecialtyForm /></PrivateRoute>} />
+          <Route path="specialties/edit/:id" element={<PrivateRoute roles={['admin']}><SpecialtyForm /></PrivateRoute>} />
         </Route>
 
         {/* Doctors Routes */}
         <Route path="doctors">
-          <Route index element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <Doctors />
-            </PrivateRoute>
-          } />
-          <Route path="add" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <DoctorForm />
-            </PrivateRoute>
-          } />
-          <Route path="edit/:id" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <DoctorForm />
-            </PrivateRoute>
-          } />
-          <Route path=":id/schedule" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <DoctorSchedule />
-            </PrivateRoute>
-          } />
+          <Route index element={<PrivateRoute roles={['admin', 'sector_admin']}><Doctors /></PrivateRoute>} />
+          <Route path="add" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorForm /></PrivateRoute>} />
+          <Route path="edit/:id" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorForm /></PrivateRoute>} />
+          <Route path=":id/schedule" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorSchedule /></PrivateRoute>} />
         </Route>
 
         {/* Patients Routes */}
         <Route path="patients">
-          <Route index element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <Patients />
-            </PrivateRoute>
-          } />
-          <Route path="add" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <PatientForm />
-            </PrivateRoute>
-          } />
-          <Route path="edit/:id" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <PatientForm />
-            </PrivateRoute>
-          } />
+            <Route index element={<PrivateRoute roles={['admin', 'sector_admin']}><Patients /></PrivateRoute>} />
+            <Route path="add" element={<PrivateRoute roles={['admin', 'sector_admin']}><PatientForm /></PrivateRoute>} />
+            <Route path="edit/:id" element={<PrivateRoute roles={['admin', 'sector_admin']}><PatientForm /></PrivateRoute>} />
         </Route>
-
+        
         {/* Appointments Routes */}
         <Route path="appointments">
-          <Route index element={
-            <PrivateRoute roles={['admin', 'sector_admin', 'doctor']}>
-              <Appointments />
-            </PrivateRoute>
-          } />
-          <Route path="add" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <AppointmentForm />
-            </PrivateRoute>
-          } />
-          <Route path="edit/:id" element={
-            <PrivateRoute roles={['admin', 'sector_admin']}>
-              <AppointmentForm />
-            </PrivateRoute>
-          } />
+            <Route index element={<PrivateRoute roles={['admin', 'sector_admin', 'doctor']}><Appointments /></PrivateRoute>} />
+            <Route path="add" element={<PrivateRoute roles={['admin', 'sector_admin']}><AppointmentForm /></PrivateRoute>} />
+            <Route path="edit/:id" element={<PrivateRoute roles={['admin', 'sector_admin']}><AppointmentForm /></PrivateRoute>} />
         </Route>
 
         {/* Tickets Route */}
-        <Route path="tickets" element={
-          <PrivateRoute roles={['admin', 'sector_admin']}>
-            <Tickets />
-          </PrivateRoute>
-        } />
+        <Route path="tickets" element={<PrivateRoute roles={['admin', 'sector_admin']}><Tickets /></PrivateRoute>} />
+
+        {/* Servicios Route */}
+        <Route path="servicios" element={<PrivateRoute roles={['admin']}><Servicios /></PrivateRoute>} />
 
         {/* Seguros Route */}
-        <Route path="seguros" element={<SegurosMedicos />} />
-        <Route path="/seguros/coberturas" element={<SeguroCoberturas />} />
+        <Route path="seguros" element={<PrivateRoute roles={['admin']}><SegurosMedicos /></PrivateRoute>} />
 
         {/* Catch all route */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

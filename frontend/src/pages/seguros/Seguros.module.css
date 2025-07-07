@@ -1,0 +1,55 @@
+.seguroCard {
+  background: #fff;
+  border-radius: 1rem;
+  border: none;
+}
+
+.cardHeader {
+  background-color: #fff !important;
+  border-bottom: 2px solid #f0f0f0 !important;
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cardHeader h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #275950;
+  margin-bottom: 0;
+}
+
+.primaryButton {
+  background-color: #275950 !important;
+  border-color: #275950 !important;
+  color: #fff !important;
+  font-weight: 500;
+}
+
+.seguroTable th,
+.seguroTable td {
+  vertical-align: middle;
+  padding: 1rem;
+}
+
+.seguroTable th {
+  color: #275950;
+  font-weight: 600;
+}
+
+.seguroTable tbody tr:hover {
+  background-color: #f7fdfd;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.formLabel {
+  color: #2A8C82;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
