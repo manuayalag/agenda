@@ -1,45 +1,68 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Container, Card, Table, Button, Modal, Form, Alert, Spinner, InputGroup } from 'react-bootstrap';
+import { useEffect, useState, useCallback } from 'react';
+import { Container, Card, Table, Button, Modal, Form, Alert, Spinner, InputGroup, Pagination } from 'react-bootstrap';
 import SeguroService from '../../services/SeguroService';
 import SeguroCoberturaService from '../../services/SeguroCoberturaService';
 import ServicioService from '../../services/ServicioService';
 import styles from './Seguros.module.css';
+import '../Appointments/Appointments.css'; // Reutilizamos estilos para consistencia
 
 const SegurosMedicos = () => {
-  // Estado general
   const [seguros, setSeguros] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
-  // Estado para la vista principal (lista de seguros)
-  const [searchTerm, setSearchTerm] = useState('');
 
-  // Estado para la vista de detalle (coberturas)
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
   const [selectedSeguro, setSelectedSeguro] = useState(null);
   const [coberturas, setCoberturas] = useState([]);
   const [loadingCoberturas, setLoadingCoberturas] = useState(false);
 
-  // Modales
   const [modal, setModal] = useState({ type: null, data: null });
 
-  const fetchSeguros = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await SeguroService.getAll();
-      setSeguros(res.data);
-    } catch (err) {
-      setError('Error al cargar los seguros.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
-    fetchSeguros();
-    ServicioService.getAll().then(res => setServicios(res.data)).catch(() => setError('Error al cargar los servicios.'));
-  }, [fetchSeguros]);
+    if (!selectedSeguro) {
+      const fetchSeguros = async () => {
+        setLoading(true);
+        try {
+          const res = await SeguroService.getAll(page, 10, debouncedSearchTerm);
+          setSeguros(res.data.items);
+          setTotalPages(res.data.totalPages);
+          setError('');
+        } catch (err) {
+          setError('Error al cargar los seguros.');
+          setSeguros([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchSeguros();
+    }
+  }, [page, debouncedSearchTerm, selectedSeguro]);
+
+  useEffect(() => {
+    ServicioService.getAll(1, 1000)
+      .then(res => setServicios(res.data.items))
+      .catch(() => setError('Error al cargar los servicios.'));
+  }, []);
+
+  const refreshSeguros = async () => {
+    const res = await SeguroService.getAll(page, 10, debouncedSearchTerm);
+    setSeguros(res.data.items);
+    setTotalPages(res.data.totalPages);
+  };
 
   const handleSelectSeguro = async (seguro) => {
     setSelectedSeguro(seguro);
@@ -59,18 +82,23 @@ const SegurosMedicos = () => {
     setCoberturas([]);
     setError('');
     setSuccess('');
+    refreshSeguros();
   };
-  
-  const handleSaveSeguro = async (nombre) => {
+
+  // --- FUNCIÓN CORREGIDA ---
+  const handleSaveSeguro = async (formData) => {
     const seguroId = modal.data?.id_seguro;
+    // Extraemos la propiedad 'nombre' del objeto formData que nos llega
+    const { nombre } = formData; 
     try {
       if (seguroId) {
+        // Nos aseguramos de enviar un objeto con la forma { nombre: valor }
         await SeguroService.update(seguroId, { nombre });
       } else {
         await SeguroService.create({ nombre });
       }
-      setSuccess(`Seguro ${seguroId ? 'actualizado' : 'creado'} correctamente.`);
-      fetchSeguros();
+      showFlashMessage(setSuccess, `Seguro ${seguroId ? 'actualizado' : 'creado'} correctamente.`);
+      refreshSeguros();
     } catch (err) {
       throw new Error(err.response?.data?.error || 'Error al guardar el seguro');
     }
@@ -79,8 +107,8 @@ const SegurosMedicos = () => {
   const handleDeleteSeguro = async () => {
     try {
       await SeguroService.delete(modal.data.id_seguro);
-      setSuccess('Seguro eliminado correctamente.');
-      fetchSeguros();
+      showFlashMessage(setSuccess, 'Seguro eliminado correctamente.');
+      refreshSeguros();
     } catch (err) {
       throw new Error('No se pudo eliminar el seguro.');
     }
@@ -95,7 +123,7 @@ const SegurosMedicos = () => {
         } else {
             await SeguroCoberturaService.addServicio(selectedSeguro.id_seguro, { id_servicio, porcentaje_cobertura });
         }
-        setSuccess(`Cobertura ${isEditing ? 'actualizada' : 'agregada'} correctamente.`);
+        showFlashMessage(setSuccess, `Cobertura ${isEditing ? 'actualizada' : 'agregada'} correctamente.`);
         handleSelectSeguro(selectedSeguro);
     } catch (err) {
         throw new Error(err.response?.data?.error || 'Error al guardar la cobertura.');
@@ -105,17 +133,12 @@ const SegurosMedicos = () => {
   const handleDeleteCobertura = async () => {
     try {
         await SeguroCoberturaService.removeServicio(selectedSeguro.id_seguro, modal.data.id_servicio);
-        setSuccess('Cobertura eliminada correctamente.');
+        showFlashMessage(setSuccess, 'Cobertura eliminada correctamente.');
         handleSelectSeguro(selectedSeguro);
     } catch(err) {
         throw new Error('No se pudo eliminar la cobertura.');
     }
   };
-
-  const filteredSeguros = useMemo(() =>
-    seguros.filter(s => s.nombre.toLowerCase().includes(searchTerm.toLowerCase())),
-    [seguros, searchTerm]
-  );
   
   const showFlashMessage = (setter, message) => {
     setter(message);
@@ -141,24 +164,27 @@ const SegurosMedicos = () => {
         ) : error ? (
           <Alert variant="danger">{error}</Alert>
         ) : (
-          <Table responsive hover className={styles.seguroTable}>
-            <thead>
-              <tr><th>ID</th><th>Nombre</th><th className="text-center">Acciones</th></tr>
-            </thead>
-            <tbody>
-              {filteredSeguros.map(seguro => (
-                <tr key={seguro.id_seguro}>
-                  <td>{seguro.id_seguro}</td>
-                  <td>{seguro.nombre}</td>
-                  <td className={`text-center ${styles.actionButtons}`}>
-                    <Button size="sm" variant="success" onClick={() => handleSelectSeguro(seguro)} className="me-2 text-white"><i className="bi bi-list-check me-1"></i> Coberturas</Button>
-                    <Button size="sm" variant="warning" onClick={() => setModal({ type: 'editSeguro', data: seguro })} className="me-2"><i className="bi bi-pencil-fill"></i></Button>
-                    <Button size="sm" variant="danger" onClick={() => setModal({ type: 'deleteSeguro', data: seguro })}><i className="bi bi-trash-fill"></i></Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+          <>
+            <Table responsive hover className={styles.seguroTable}>
+              <thead>
+                <tr><th>ID</th><th>Nombre</th><th className="text-center">Acciones</th></tr>
+              </thead>
+              <tbody>
+                {seguros.map(seguro => (
+                  <tr key={seguro.id_seguro}>
+                    <td>{seguro.id_seguro}</td>
+                    <td>{seguro.nombre}</td>
+                    <td className={`text-center ${styles.actionButtons}`}>
+                      <Button size="sm" variant="success" onClick={() => handleSelectSeguro(seguro)} className="me-2 text-white"><i className="bi bi-list-check me-1"></i> Coberturas</Button>
+                      <Button size="sm" variant="warning" onClick={() => setModal({ type: 'editSeguro', data: seguro })} className="me-2"><i className="bi bi-pencil-fill"></i></Button>
+                      <Button size="sm" variant="danger" onClick={() => setModal({ type: 'deleteSeguro', data: seguro })}><i className="bi bi-trash-fill"></i></Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <PaginationControls currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
         )}
       </Card.Body>
     </Card>
@@ -209,6 +235,7 @@ const SegurosMedicos = () => {
   return (
     <Container className="py-4">
       {selectedSeguro ? renderCoverageDetails() : renderSeguroList()}
+      
       <FormModal
         show={modal.type === 'editSeguro'}
         onHide={() => setModal({ type: null, data: null })}
@@ -216,14 +243,12 @@ const SegurosMedicos = () => {
         initialData={modal.data}
         onSubmit={handleSaveSeguro}
         fields={[{ name: 'nombre', label: 'Nombre del Seguro', placeholder: 'Ej: Seguro ABC' }]}
-        showFlashMessage={showFlashMessage}
       />
       <DeleteModal
         show={modal.type === 'deleteSeguro'}
         onHide={() => setModal({ type: null, data: null })}
         onConfirm={handleDeleteSeguro}
         item={modal.data?.nombre}
-        showFlashMessage={showFlashMessage}
       />
       <FormModal
         show={modal.type === 'editCobertura'}
@@ -235,27 +260,77 @@ const SegurosMedicos = () => {
           { name: 'id_servicio', label: 'Servicio', type: 'select', options: servicios.map(s => ({ value: s.id, label: s.nombre_servicio })), disabled: !!modal.data },
           { name: 'porcentaje_cobertura', label: '% Cobertura', type: 'number', min: 0, max: 100 }
         ]}
-        showFlashMessage={showFlashMessage}
       />
        <DeleteModal
         show={modal.type === 'deleteCobertura'}
         onHide={() => setModal({ type: null, data: null })}
         onConfirm={handleDeleteCobertura}
         item={`la cobertura de "${modal.data?.nombre_servicio}"`}
-        showFlashMessage={showFlashMessage}
       />
     </Container>
   );
 };
 
-const FormModal = ({ show, onHide, title, initialData, onSubmit, fields, showFlashMessage }) => {
+const PaginationControls = ({ currentPage, totalPages, onPageChange }) => {
+    if (totalPages <= 1) return null;
+    const handlePageClick = (page) => {
+      if (page >= 1 && page <= totalPages && page !== currentPage) onPageChange(page);
+    };
+    const pageNumbers = [];
+    const maxPagesToShow = 5;
+    let startPage, endPage;
+    if (totalPages <= maxPagesToShow) {
+      startPage = 1;
+      endPage = totalPages;
+    } else {
+      const maxPagesBefore = Math.floor(maxPagesToShow / 2);
+      const maxPagesAfter = Math.ceil(maxPagesToShow / 2) - 1;
+      if (currentPage <= maxPagesBefore) {
+        startPage = 1;
+        endPage = maxPagesToShow;
+      } else if (currentPage + maxPagesAfter >= totalPages) {
+        startPage = totalPages - maxPagesToShow + 1;
+        endPage = totalPages;
+      } else {
+        startPage = currentPage - maxPagesBefore;
+        endPage = currentPage + maxPagesAfter;
+      }
+    }
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(i);
+    }
+    return (
+      <div className="d-flex justify-content-center">
+        <Pagination>
+          <Pagination.First onClick={() => handlePageClick(1)} disabled={currentPage === 1} />
+          <Pagination.Prev onClick={() => handlePageClick(currentPage - 1)} disabled={currentPage === 1} />
+          {startPage > 1 && <Pagination.Ellipsis disabled />}
+          {pageNumbers.map(number => (
+            <Pagination.Item key={number} active={number === currentPage} onClick={() => handlePageClick(number)}>
+              {number}
+            </Pagination.Item>
+          ))}
+          {endPage < totalPages && <Pagination.Ellipsis disabled />}
+          <Pagination.Next onClick={() => handlePageClick(currentPage + 1)} disabled={currentPage === totalPages} />
+          <Pagination.Last onClick={() => handlePageClick(totalPages)} disabled={currentPage === totalPages} />
+        </Pagination>
+      </div>
+    );
+};
+
+const FormModal = ({ show, onHide, title, initialData, onSubmit, fields }) => {
   const [formData, setFormData] = useState({});
   const [localError, setLocalError] = useState('');
 
   useEffect(() => {
     if (show) {
       const initial = fields.reduce((acc, field) => {
-        acc[field.name] = initialData?.[field.name] ?? '';
+        // Para el caso de seguros, el campo es 'nombre'
+        if (initialData && field.name === 'nombre') {
+          acc[field.name] = initialData[field.name] ?? '';
+        } else {
+          acc[field.name] = initialData?.[field.name] ?? '';
+        }
         return acc;
       }, {});
       setFormData(initial);
@@ -310,17 +385,18 @@ const FormModal = ({ show, onHide, title, initialData, onSubmit, fields, showFla
   );
 };
 
-const DeleteModal = ({ show, onHide, onConfirm, item, showFlashMessage }) => {
+const DeleteModal = ({ show, onHide, onConfirm, item }) => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleDelete = async () => {
       setLoading(true);
+      setError('');
       try {
           await onConfirm();
           onHide();
       } catch (err) {
-          showFlashMessage(setError, err.message);
-          onHide();
+          setError(err.message);
       } finally {
           setLoading(false);
       }
@@ -332,10 +408,11 @@ const DeleteModal = ({ show, onHide, onConfirm, item, showFlashMessage }) => {
         <Modal.Title><i className="bi bi-trash3-fill text-danger me-2"></i>Confirmar Eliminación</Modal.Title>
       </Modal.Header>
       <Modal.Body>
+        {error && <Alert variant="danger">{error}</Alert>}
         ¿Estás seguro que deseas eliminar <strong>{item}</strong>? Esta acción no se puede deshacer.
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide}>Cancelar</Button>
+        <Button variant="secondary" onClick={onHide} disabled={loading}>Cancelar</Button>
         <Button variant="danger" onClick={handleDelete} disabled={loading}>
           {loading ? <Spinner as="span" size="sm" /> : 'Eliminar'}
         </Button>
