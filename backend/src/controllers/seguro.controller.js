@@ -1,5 +1,22 @@
 const db = require('../models');
 const SeguroMedico = db.SeguroMedico;
+const { Op } = db.Sequelize; // Importamos el operador para la búsqueda
+
+// --- FUNCIONES DE AYUDA PARA PAGINACIÓN ---
+const getPagination = (page, size) => {
+  const limit = size ? +size : 10; // 10 por defecto
+  const offset = page ? (page - 1) * limit : 0;
+  return { limit, offset };
+};
+
+const getPagingData = (data, page, limit) => {
+  const { count: totalItems, rows: items } = data;
+  const currentPage = page ? +page : 1;
+  const totalPages = Math.ceil(totalItems / limit);
+  return { totalItems, items, totalPages, currentPage };
+};
+
+// --- CONTROLADORES CRUD ---
 
 // Crear seguro
 exports.createSeguro = async (req, res) => {
@@ -11,10 +28,28 @@ exports.createSeguro = async (req, res) => {
   }
 };
 
-// Listar todos los seguros
+// --- FUNCIÓN MODIFICADA ---
+// Listar todos los seguros con búsqueda y paginación
 exports.getAllSeguros = async (req, res) => {
-  const seguros = await SeguroMedico.findAll();
-  res.json(seguros);
+  const { page, size, search } = req.query;
+  const { limit, offset } = getPagination(page, size);
+
+  // Condición de búsqueda por nombre (si se proporciona)
+  const condition = search ? { nombre: { [Op.iLike]: `%${search}%` } } : null;
+
+  try {
+    const data = await SeguroMedico.findAndCountAll({
+      where: condition,
+      limit,
+      offset,
+      order: [['nombre', 'ASC']]
+    });
+
+    const response = getPagingData(data, page, limit);
+    res.status(200).json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 // Obtener seguro por id

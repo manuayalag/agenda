@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Container, Card, Table, Button, Modal, Form, Alert, Spinner } from 'react-bootstrap';
+import { Container, Card, Table, Button, Modal, Form, Alert, Spinner, InputGroup, Pagination } from 'react-bootstrap';
 import ServicioService from '../../services/ServicioService';
 import styles from './Servicios.module.css';
+import '../Appointments/Appointments.css'; // Reutilizamos el CSS para un estilo consistente
 
-// Función para formatear el número
 const formatNumber = (num) => {
   if (num === null || num === undefined) return '';
   return new Intl.NumberFormat('es-ES').format(num);
@@ -16,22 +16,42 @@ const Servicios = () => {
   const [success, setSuccess] = useState('');
   const [modal, setModal] = useState({ type: null, data: null });
 
-  const fetchServicios = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await ServicioService.getAll();
-      setServicios(res.data);
-      setError('');
-    } catch (err) {
-      setError('Error al cargar los servicios.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1); // Cada nueva búsqueda resetea a la página 1
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const fetchServicios = async () => {
+      setLoading(true);
+      try {
+        const res = await ServicioService.getAll(page, 10, debouncedSearchTerm);
+        setServicios(res.data.items);
+        setTotalPages(res.data.totalPages);
+        setError('');
+      } catch (err) {
+        setError('Error al cargar los servicios. Verifique la conexión con el servidor.');
+        setServicios([]);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchServicios();
-  }, [fetchServicios]);
+  }, [page, debouncedSearchTerm]);
+
+  const refreshData = async () => {
+    const res = await ServicioService.getAll(page, 10, debouncedSearchTerm);
+    setServicios(res.data.items);
+    setTotalPages(res.data.totalPages);
+  };
   
   const showFlashMessage = (setter, message) => {
     setter(message);
@@ -42,12 +62,12 @@ const Servicios = () => {
     const isEditing = !!modal.data;
     try {
       if (isEditing) {
-        await ServicioService.update(modal.data.id_servicio, formData);
+        await ServicioService.update(modal.data.id, formData);
       } else {
         await ServicioService.create(formData);
       }
       showFlashMessage(setSuccess, `Servicio ${isEditing ? 'actualizado' : 'creado'} correctamente.`);
-      fetchServicios();
+      refreshData();
     } catch (err) {
       const errorMessage = err.response?.data?.error || `Error al ${isEditing ? 'actualizar' : 'crear'} el servicio.`;
       throw new Error(errorMessage);
@@ -56,9 +76,9 @@ const Servicios = () => {
 
   const handleDelete = async () => {
     try {
-      await ServicioService.delete(modal.data.id_servicio);
+      await ServicioService.delete(modal.data.id);
       showFlashMessage(setSuccess, 'Servicio eliminado correctamente.');
-      fetchServicios();
+      refreshData();
     } catch (err) {
       const errorMessage = err.response?.data?.error || 'Error al eliminar el servicio.';
       throw new Error(errorMessage);
@@ -78,38 +98,54 @@ const Servicios = () => {
           {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
           {error && !loading && <Alert variant="danger">{error}</Alert>}
           
+          <InputGroup className="mb-3">
+            <Form.Control
+              placeholder="Buscar por nombre de servicio..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <InputGroup.Text><i className="bi bi-search"></i></InputGroup.Text>
+          </InputGroup>
+
           {loading ? (
             <div className="text-center py-5"><Spinner animation="border" style={{ color: '#275950' }} /></div>
           ) : (
-            <Table responsive hover className={styles.servicioTable}>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Nombre del Servicio</th>
-                  <th>Precio</th>
-                  <th>Tiempo (min)</th>
-                  <th className="text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {servicios.map(servicio => (
-                  <tr key={servicio.id || servicio.id_servicio}>
-                    <td>{servicio.id || servicio.id_servicio}</td>
-                    <td>{servicio.nombre_servicio}</td>
-                    <td>{formatNumber(servicio.precio)}</td>
-                    <td>{servicio.tiempo} min</td>
-                    <td className={`text-center ${styles.actionButtons}`}>
-                        <Button size="sm" variant="warning" className="me-2" onClick={() => setModal({ type: 'edit', data: servicio })}>
-                            <i className="bi bi-pencil-fill"></i> Editar
-                        </Button>
-                        <Button size="sm" variant="danger" onClick={() => setModal({ type: 'delete', data: servicio })}>
-                            <i className="bi bi-trash-fill"></i> Eliminar
-                        </Button>
-                    </td>
+            <>
+              <Table responsive hover className={styles.servicioTable}>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nombre del Servicio</th>
+                    <th>Precio</th>
+                    <th>Tiempo (min)</th>
+                    <th className="text-center">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {servicios.map(servicio => (
+                    <tr key={servicio.id}>
+                      <td>{servicio.id}</td>
+                      <td>{servicio.nombre_servicio}</td>
+                      <td>{formatNumber(servicio.precio)}</td>
+                      <td>{servicio.tiempo} min</td>
+                      <td className={`text-center ${styles.actionButtons}`}>
+                          <Button size="sm" variant="warning" className="me-2" onClick={() => setModal({ type: 'edit', data: servicio })}>
+                              <i className="bi bi-pencil-fill"></i> Editar
+                          </Button>
+                          <Button size="sm" variant="danger" onClick={() => setModal({ type: 'delete', data: servicio })}>
+                              <i className="bi bi-trash-fill"></i> Eliminar
+                          </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              <PaginationControls
+                currentPage={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </Card.Body>
       </Card>
@@ -132,7 +168,60 @@ const Servicios = () => {
   );
 };
 
-// Componentes de Modal...
+const PaginationControls = ({ currentPage, totalPages, onPageChange }) => {
+  if (totalPages <= 1) return null;
+
+  const handlePageClick = (page) => {
+    if (page >= 1 && page <= totalPages && page !== currentPage) {
+      onPageChange(page);
+    }
+  };
+
+  const pageNumbers = [];
+  const maxPagesToShow = 5;
+  let startPage, endPage;
+
+  if (totalPages <= maxPagesToShow) {
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    const maxPagesBefore = Math.floor(maxPagesToShow / 2);
+    const maxPagesAfter = Math.ceil(maxPagesToShow / 2) - 1;
+    if (currentPage <= maxPagesBefore) {
+      startPage = 1;
+      endPage = maxPagesToShow;
+    } else if (currentPage + maxPagesAfter >= totalPages) {
+      startPage = totalPages - maxPagesToShow + 1;
+      endPage = totalPages;
+    } else {
+      startPage = currentPage - maxPagesBefore;
+      endPage = currentPage + maxPagesAfter;
+    }
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    pageNumbers.push(i);
+  }
+
+  return (
+    <div className="d-flex justify-content-center">
+      <Pagination>
+        <Pagination.First onClick={() => handlePageClick(1)} disabled={currentPage === 1} />
+        <Pagination.Prev onClick={() => handlePageClick(currentPage - 1)} disabled={currentPage === 1} />
+        {startPage > 1 && <Pagination.Ellipsis disabled />}
+        {pageNumbers.map(number => (
+          <Pagination.Item key={number} active={number === currentPage} onClick={() => handlePageClick(number)}>
+            {number}
+          </Pagination.Item>
+        ))}
+        {endPage < totalPages && <Pagination.Ellipsis disabled />}
+        <Pagination.Next onClick={() => handlePageClick(currentPage + 1)} disabled={currentPage === totalPages} />
+        <Pagination.Last onClick={() => handlePageClick(totalPages)} disabled={currentPage === totalPages} />
+      </Pagination>
+    </div>
+  );
+};
+
 const FormModal = ({ show, onHide, title, initialData, onSubmit }) => {
   const [formData, setFormData] = useState({});
   const [localError, setLocalError] = useState('');

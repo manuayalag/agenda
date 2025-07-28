@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(authJwt.verifyToken);
 
 // Rutas para citas
+// Asegúrate de que cada 'controller.funcion' exista en tu archivo de controlador
 router.post('/', controller.createAppointment);
 router.get('/filtered', controller.getFilteredAppointments);
 router.get('/prestador/:prestadorId', controller.getPrestadorAppointments);

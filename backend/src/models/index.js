@@ -1,24 +1,21 @@
-const { Sequelize, DataTypes } = require('sequelize');
-const config = require('../config/db.config');
-
-const env = process.env.NODE_ENV || 'development';
-const dbConfig = config[env];
+const Sequelize = require('sequelize');
+const { DataTypes } = Sequelize;
+const dotenv = require('dotenv');
+dotenv.config();
 
 const sequelize = new Sequelize(
-  dbConfig.database,
-  dbConfig.username,
-  dbConfig.password,
+  process.env.DB_NAME,
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
   {
-    host: dbConfig.host,
-    port: dbConfig.port,
-    dialect: dbConfig.dialect,
-    dialectOptions: dbConfig.dialectOptions,
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    dialect: process.env.DB_DIALECT || 'postgres',
     logging: false,
   }
 );
 
 const db = {};
-
 db.Sequelize = Sequelize;
 db.sequelize = sequelize;
 

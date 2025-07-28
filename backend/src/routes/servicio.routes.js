@@ -1,16 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../models');
-const Servicio = db.Servicio;
+// La ruta debe ser relativa al archivo actual.
+// Desde /src/routes/ para llegar a /src/controllers/ es ../controllers/
+const servicioCtrl = require('../controllers/servicio.controller');
 
-// GET /api/servicios
-router.get('/', async (req, res) => {
-  try {
-    const servicios = await Servicio.findAll();
-    res.json(servicios);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Definir las rutas para el CRUD de Servicios
+router.get('/', servicioCtrl.findAll);
+router.post('/', servicioCtrl.create);
+router.put('/:id', servicioCtrl.update);
+router.delete('/:id', servicioCtrl.remove);
 
 module.exports = router;
