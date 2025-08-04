@@ -28,52 +28,50 @@
 
 /* Día CON horarios disponibles (Verde Claro) */
 .availability-calendar .react-calendar__tile.day-available:enabled {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: #e8f5e9 !important;
+  color: #2e7d32 !important;
   font-weight: bold;
 }
 
 /* Día SIN horarios disponibles (Rojo Claro) */
 .availability-calendar .react-calendar__tile.day-unavailable:enabled {
-  background: #ffebee;
-  color: #c62828;
+  background: #ffebee !important;
+  color: #c62828 !important;
   font-weight: bold;
 }
 
 /* --- ESTADOS HOVER (SOLO SOBRE DÍAS NO SELECCIONADOS) --- */
 
-/* Hover sobre día CON horarios (Celeste) */
+/* Hover sobre día CON horarios */
 .availability-calendar .react-calendar__tile.day-available:enabled:hover {
-  background: #e0f7fa !important;
+  background: #c8e6c9 !important;
 }
 
-/* Hover sobre día SIN horarios (Rojo Pálido) */
+/* Hover sobre día SIN horarios */
 .availability-calendar .react-calendar__tile.day-unavailable:enabled:hover {
   background: #ffcdd2 !important;
+  cursor: not-allowed;
 }
 
 
 /* --- ESTADOS DE SELECCIÓN (DÍAS ACTIVOS) --- */
-/* Estas reglas anulan el azul por defecto y controlan el hover */
 
-/* Selección de día CON horarios (Verde Oscuro) -> SIN HOVER */
+/* Selección de día CON horarios (Verde Oscuro) */
 .availability-calendar .react-calendar__tile--active.day-available:enabled,
 .availability-calendar .react-calendar__tile--active.day-available:enabled:focus,
 .availability-calendar .react-calendar__tile--active.day-available:enabled:hover {
   background: #275950 !important;
   color: white !important;
   transform: scale(1.05);
-  cursor: default; /* El cursor indica que no hay más acción */
 }
 
-/* Selección de día SIN horarios (Rojo Oscuro) -> SIN HOVER */
+/* Selección de día SIN horarios (Rojo Oscuro) */
 .availability-calendar .react-calendar__tile--active.day-unavailable:enabled,
 .availability-calendar .react-calendar__tile--active.day-unavailable:enabled:focus,
 .availability-calendar .react-calendar__tile--active.day-unavailable:enabled:hover {
-    background: #c62828 !important;
+    background: #d32f2f !important;
     color: white !important;
     transform: scale(1.05);
-    cursor: default; /* El cursor indica que no hay más acción */
 }
 
 
@@ -82,7 +80,7 @@
 .availability-calendar .react-calendar__tile:disabled {
   background-color: #f5f5f5 !important;
   color: #bdbdbd !important;
-  opacity: 0.7;
+  text-decoration: line-through;
 }
 
 .availability-calendar .react-calendar__tile--now {
@@ -90,9 +88,7 @@
   border: 2px solid #0d6efd;
 }
 
-/* ------------------------------------------- */
 /* --- ESTILOS DE SLOTS DE HORARIO (INTACTOS) --- */
-/* ------------------------------------------- */
 
 .time-slot-grid-container {
   max-height: 290px;

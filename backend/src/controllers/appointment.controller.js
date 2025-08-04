@@ -5,6 +5,55 @@ const Servicio = db.Servicio;
 const Patient = db.Patient;
 const nodemailer = require('nodemailer');
 
+// Obtener toda la data de un mes para un prestador
+exports.getMonthlySchedule = async (req, res) => {
+    const { id: prestadorId } = req.params;
+    const { year, month } = req.query;
+
+    if (!year || !month) {
+        return res.status(400).json({ message: "Se requiere año y mes." });
+    }
+
+    try {
+        const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+        // Realizamos todas las consultas a la base de datos en paralelo
+        const [appointments, absences, workBlocks] = await Promise.all([
+            Appointment.findAll({
+                where: {
+                    prestadorId,
+                    date: { [Op.between]: [startDate, endDate] },
+                    status: { [Op.ne]: 'cancelled' }
+                },
+                attributes: ['date', 'startTime', 'endTime']
+            }),
+            PrestadorAusencia.findAll({
+                where: {
+                    prestadorId,
+                    [Op.or]: [
+                        { fecha_inicio: { [Op.between]: [startDate, endDate] } },
+                        { fecha_fin: { [Op.between]: [startDate, endDate] } },
+                        { [Op.and]: [
+                            { fecha_inicio: { [Op.lte]: startDate } },
+                            { fecha_fin: { [Op.gte]: endDate } }
+                        ]}
+                    ]
+                }
+            }),
+            PrestadorHorario.findAll({
+                where: { prestadorId }
+            })
+        ]);
+
+        res.status(200).json({ appointments, absences, workBlocks });
+
+    } catch (error) {
+        console.error("Error en getMonthlySchedule:", error);
+        res.status(500).json({ message: "Error al obtener el calendario mensual." });
+    }
+};
+
 // Crear una cita
 exports.createAppointment = async (req, res) => {
   try {

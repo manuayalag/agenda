@@ -33,6 +33,8 @@ db.Servicio = require('./servicio.model')(sequelize, DataTypes);
 db.PrestadorServicio = require('./prestador_servicio.model')(sequelize, DataTypes);
 const PrestadorHorario = require('./prestador_horario.model')(sequelize, DataTypes);
 db.PrestadorHorario = PrestadorHorario;
+const PrestadorAusencia = require('./prestador_ausencia.model')(sequelize, DataTypes);
+db.PrestadorAusencia = PrestadorAusencia;
 db.SeguroMedico = require('./seguro_medico.model')(sequelize, DataTypes);
 db.PrestadorSeguro = require('./prestador_seguro.model')(sequelize, DataTypes);
 db.ServicioSeguro = require('./servicio_seguro.model')(sequelize, DataTypes);
@@ -117,6 +119,10 @@ db.PrestadorHorario.belongsTo(db.Prestador, { foreignKey: 'prestadorId', as: 'pr
 // Paciente pertenece a un seguro (opcional)
 db.Patient.belongsTo(db.SeguroMedico, { foreignKey: 'id_seguro', as: 'seguro' });
 db.SeguroMedico.hasMany(db.Patient, { foreignKey: 'id_seguro', as: 'pacientes' });
+
+// Relación: Un prestador tiene muchas ausencias
+db.Prestador.hasMany(db.PrestadorAusencia, { foreignKey: 'prestadorId', as: 'ausencias' });
+db.PrestadorAusencia.belongsTo(db.Prestador, { foreignKey: 'prestadorId', as: 'prestador' });
 
 // Prestador <-> Seguro (muchos a muchos)
 db.Prestador.belongsToMany(db.SeguroMedico, {

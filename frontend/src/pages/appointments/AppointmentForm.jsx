@@ -13,9 +13,10 @@ import './AppointmentForm.css';
 const initialState = {
     formData: { prestadorId: "", servicioId: "", patientId: "", date: "", startTime: "", endTime: "", status: "scheduled", reason: "", notes: "", specialtyId: "" },
     lists: { specialties: [], doctors: [], patients: [], services: [], dynamicSlots: [] },
-    monthlyAvailability: {},
+    monthlySchedule: { appointments: [], absences: [], workBlocks: [] },
+    detailedAvailability: {},
     ui: { isEditing: false, formKey: Date.now(), activeCalendarDate: new Date() },
-    status: { loading: { initial: true, services: false, slots: false }, error: null, submit: false },
+    status: { loading: { initial: true, services: false, slots: false, monthly: false }, error: null, submit: false },
 };
 
 function appointmentReducer(state, action) {
@@ -27,7 +28,6 @@ function appointmentReducer(state, action) {
             
             if (['specialtyId', 'prestadorId', 'date', 'servicioId'].includes(name)) {
                 newState.formData.startTime = '';
-                newState.formData.endTime = '';
             }
             if (['specialtyId', 'prestadorId'].includes(name)) {
                 newState.formData.servicioId = '';
@@ -42,7 +42,8 @@ function appointmentReducer(state, action) {
             return newState;
         }
         case 'SET_LIST': return { ...state, lists: { ...state.lists, [action.payload.key]: action.payload.data } };
-        case 'SET_MONTHLY_AVAILABILITY': return { ...state, monthlyAvailability: action.payload };
+        case 'SET_MONTHLY_SCHEDULE': return { ...state, monthlySchedule: action.payload };
+        case 'SET_DETAILED_AVAILABILITY': return { ...state, detailedAvailability: action.payload };
         case 'SET_ACTIVE_CALENDAR_DATE': return { ...state, ui: { ...state.ui, activeCalendarDate: action.payload } };
         case 'SET_UI_STATE': return { ...state, ui: { ...state.ui, ...action.payload } };
         case 'SET_LOADING': return { ...state, status: { ...state.status, loading: { ...state.status.loading, ...action.payload } } };
@@ -57,26 +58,24 @@ function useAppointmentForm() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [state, dispatch] = useReducer(appointmentReducer, initialState);
-    const { formData, lists, ui, status, monthlyAvailability } = state;
+    const { formData, lists, ui, status, monthlySchedule, detailedAvailability } = state;
 
     useEffect(() => {
         dispatch({ type: 'SET_UI_STATE', payload: { isEditing: !!id } });
         const fetchCoreData = async () => {
             dispatch({ type: 'SET_LOADING', payload: { initial: true } });
             try {
-                // --- CORRECCIÓN APLICADA AQUÍ ---
                 const [patientsRes, doctorsRes, specialtiesRes] = await Promise.all([
-                    PatientService.getAll({ params: { size: 10000 } }), // Pedimos todos los pacientes
+                    PatientService.getAll({ params: { size: 10000 } }),
                     DoctorService.getAll(),
-                    SpecialtyService.getAll({ params: { size: 1000 } }) // Pedimos todas las especialidades
+                    SpecialtyService.getAll({ params: { size: 1000 } })
                 ]);
                 
                 dispatch({ type: 'SET_INITIAL_DATA', payload: { 
                     patients: patientsRes.data.items || [], 
-                    doctors: doctorsRes.data, 
+                    doctors: doctorsRes.data || [], 
                     specialties: specialtiesRes.data.items || [] 
                 }});
-                // --- FIN DE LA CORRECCIÓN ---
 
                 if (id) {
                     const appointment = await AppointmentService.getById(id).then(res => res.data);
@@ -109,7 +108,7 @@ function useAppointmentForm() {
         if (formData.prestadorId) {
             dispatch({ type: 'SET_LOADING', payload: { services: true } });
             PrestadorServicioService.getServicios(formData.prestadorId)
-                .then(res => dispatch({ type: 'SET_LIST', payload: { key: 'services', data: res.data } }))
+                .then(res => dispatch({ type: 'SET_LIST', payload: { key: 'services', data: res.data || [] } }))
                 .finally(() => dispatch({ type: 'SET_LOADING', payload: { services: false } }));
         }
     }, [formData.prestadorId]);
@@ -120,53 +119,126 @@ function useAppointmentForm() {
     }, [formData.specialtyId, lists.doctors]);
 
     useEffect(() => {
-        if (formData.prestadorId) {
+        if (formData.prestadorId && ui.activeCalendarDate) {
+            dispatch({ type: 'SET_LOADING', payload: { monthly: true } });
             const year = ui.activeCalendarDate.getFullYear();
             const month = ui.activeCalendarDate.getMonth() + 1;
-            DoctorService.getMonthlyAvailability(formData.prestadorId, year, month)
-                .then(res => dispatch({ type: 'SET_MONTHLY_AVAILABILITY', payload: res.data }));
+
+            DoctorService.getMonthlySchedule(formData.prestadorId, year, month)
+                .then(res => {
+                    dispatch({ type: 'SET_MONTHLY_SCHEDULE', payload: res.data });
+                })
+                .catch(err => {
+                    console.error("Error fetching monthly schedule:", err);
+                    dispatch({ type: 'SET_ERROR', payload: "Error al cargar el calendario mensual." });
+                })
+                .finally(() => {
+                    dispatch({ type: 'SET_LOADING', payload: { monthly: false } });
+                });
         }
     }, [formData.prestadorId, ui.activeCalendarDate]);
 
     useEffect(() => {
-        const calculateSlots = async () => {
-            if (!formData.date || !formData.prestadorId || !formData.servicioId) {
-                dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } }); return;
+        if (!formData.prestadorId || !formData.servicioId || status.loading.monthly) {
+            dispatch({ type: 'SET_DETAILED_AVAILABILITY', payload: {} });
+            return;
+        }
+
+        const service = lists.services.find(s => s.id === parseInt(formData.servicioId));
+        if (!service) return;
+
+        const { appointments, absences, workBlocks } = monthlySchedule;
+        const serviceDuration = service.tiempo;
+        const timeToMinutes = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+        const daysInMonth = new Date(ui.activeCalendarDate.getFullYear(), ui.activeCalendarDate.getMonth() + 1, 0).getDate();
+        const newDetailedAvailability = {};
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const currentDate = new Date(Date.UTC(ui.activeCalendarDate.getFullYear(), ui.activeCalendarDate.getMonth(), day));
+            const dateStr = currentDate.toISOString().split('T')[0];
+            const dayOfWeek = currentDate.getUTCDay() === 0 ? 7 : currentDate.getUTCDay();
+            
+            const dailyWorkBlocks = workBlocks.filter(wb => wb.dia === dayOfWeek);
+            if (dailyWorkBlocks.length === 0) {
+                newDetailedAvailability[dateStr] = 'NON_WORKING';
+                continue;
             }
-            dispatch({ type: 'SET_LOADING', payload: { slots: true } });
-            try {
-                const service = lists.services.find(s => s.id === formData.servicioId);
-                const res = await DoctorService.getDailyAvailability(formData.prestadorId, formData.date);
-                const { workBlocks = [], existingAppointments = [] } = res.data;
-                const serviceDuration = service?.tiempo;
-                if (!serviceDuration) { dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } }); return; }
 
-                const timeToMinutes = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-                const minutesToTime = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-                const appointmentIntervals = existingAppointments
-                    .filter(app => !(ui.isEditing && app.id === parseInt(id)))
-                    .map(app => ({ start: timeToMinutes(app.startTime), end: timeToMinutes(app.endTime) }));
-
-                const finalSlots = workBlocks.flatMap(block => {
-                    const slots = [];
-                    let currentTime = timeToMinutes(block.startTime);
-                    const blockEnd = timeToMinutes(block.endTime);
-                    while (currentTime + serviceDuration <= blockEnd) {
-                        const slotEnd = currentTime + serviceDuration;
-                        if (!appointmentIntervals.some(app => currentTime < app.end && slotEnd > app.start)) {
-                            slots.push({ start: minutesToTime(currentTime) });
-                        }
-                        currentTime += serviceDuration;
+            const dailyAppointments = appointments.filter(a => a.date === dateStr);
+            const dailyAbsences = absences.filter(a => a.fecha_inicio <= dateStr && a.fecha_fin >= dateStr);
+            
+            const unavailableIntervals = [
+                ...dailyAppointments.map(app => ({ start: timeToMinutes(app.startTime), end: timeToMinutes(app.endTime) })),
+                ...dailyAbsences.map(ab => ({ start: timeToMinutes(ab.hora_inicio), end: timeToMinutes(ab.hora_fin) }))
+            ];
+            
+            let hasSlots = false;
+            for (const block of dailyWorkBlocks) {
+                let currentTime = timeToMinutes(block.hora_inicio);
+                const blockEnd = timeToMinutes(block.hora_fin);
+                while (currentTime + serviceDuration <= blockEnd) {
+                    const slotEnd = currentTime + serviceDuration;
+                    const isOverlapping = unavailableIntervals.some(unavailable => currentTime < unavailable.end && slotEnd > unavailable.start);
+                    if (!isOverlapping) {
+                        hasSlots = true;
+                        break; 
                     }
-                    return slots;
-                });
-                dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: finalSlots } });
-            } finally {
-                dispatch({ type: 'SET_LOADING', payload: { slots: false } });
+                    // ⭐ CORRECCIÓN PRINCIPAL #1: El intervalo de búsqueda ahora es la duración del servicio
+                    currentTime += serviceDuration;
+                }
+                if (hasSlots) break;
             }
-        };
-        calculateSlots();
-    }, [formData.date, formData.prestadorId, formData.servicioId, lists.services, ui.isEditing, id]);
+            newDetailedAvailability[dateStr] = hasSlots ? 'AVAILABLE' : 'FULL';
+        }
+        dispatch({ type: 'SET_DETAILED_AVAILABILITY', payload: newDetailedAvailability });
+
+    }, [monthlySchedule, formData.servicioId, lists.services, status.loading.monthly]);
+    
+    useEffect(() => {
+        if (!formData.date) {
+            dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: [] } });
+            return;
+        }
+
+        const service = lists.services.find(s => s.id === parseInt(formData.servicioId));
+        const { appointments, absences, workBlocks } = monthlySchedule;
+        const serviceDuration = service?.tiempo;
+        if (!serviceDuration) return;
+
+        const timeToMinutes = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+        const minutesToTime = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        
+        const dayOfWeek = (new Date(formData.date + 'T00:00:00Z')).getUTCDay() === 0 ? 7 : (new Date(formData.date + 'T00:00:00Z')).getUTCDay();
+        
+        const dailyWorkBlocks = workBlocks.filter(wb => wb.dia === dayOfWeek);
+        const dailyAppointments = appointments.filter(a => a.date === formData.date);
+        const dailyAbsences = absences.filter(a => a.fecha_inicio <= formData.date && a.fecha_fin >= formData.date);
+
+        const unavailableIntervals = [
+            ...dailyAppointments.map(app => ({ start: timeToMinutes(app.startTime), end: timeToMinutes(app.endTime) })),
+            ...dailyAbsences.map(ab => ({ start: timeToMinutes(ab.hora_inicio), end: timeToMinutes(ab.hora_fin) }))
+        ];
+
+        const finalSlots = dailyWorkBlocks.flatMap(block => {
+            const slots = [];
+            let currentTime = timeToMinutes(block.hora_inicio);
+            const blockEnd = timeToMinutes(block.hora_fin);
+            while (currentTime + serviceDuration <= blockEnd) {
+                const slotEnd = currentTime + serviceDuration;
+                const isOverlapping = unavailableIntervals.some(unavailable => currentTime < unavailable.end && slotEnd > unavailable.start);
+                if (!isOverlapping) {
+                    slots.push({ start: minutesToTime(currentTime) });
+                }
+                // ⭐ CORRECCIÓN PRINCIPAL #2: El intervalo de búsqueda ahora es la duración del servicio
+                currentTime += serviceDuration;
+            }
+            return slots;
+        });
+
+        dispatch({ type: 'SET_LIST', payload: { key: 'dynamicSlots', data: finalSlots } });
+
+    }, [formData.date, monthlySchedule]);
     
     const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
@@ -193,13 +265,13 @@ function useAppointmentForm() {
 
 const AppointmentForm = () => {
     const { state, handlers, filteredDoctors } = useAppointmentForm();
-    const { formData, lists, ui, status, monthlyAvailability } = state;
+    const { formData, lists, ui, status, detailedAvailability } = state;
   
     const renderSelector = (props) => (
         <Form.Group className="mb-3">
             <Form.Label>{props.label}</Form.Label>
             <Select
-                classNamePrefix="custom-select" className="custom-select-container"
+                classNamePrefix="custom-select"
                 options={props.options}
                 value={props.options.find(o => o.value === props.value) || null}
                 onChange={opt => handlers.dispatch({ type: 'SET_FIELD', payload: { name: props.name, value: opt ? opt.value : '' } })}
@@ -211,15 +283,20 @@ const AppointmentForm = () => {
 
     const tileClassName = useCallback(({ date, view }) => {
         if (view !== 'month' || !formData.prestadorId || !formData.servicioId) return null;
+
         const dateStr = date.toISOString().split('T')[0];
-        const dayStatus = monthlyAvailability[dateStr];
-        if (dayStatus === 'FULL' || dayStatus === 'NON_WORKING') return 'day-unavailable';
+        const dayStatus = detailedAvailability[dateStr]; 
+
+        if (dayStatus === 'FULL' || dayStatus === 'NON_WORKING') {
+            return 'day-unavailable';
+        }
+        
         if (dayStatus === 'AVAILABLE') {
-            if (formData.date === dateStr && !status.loading.slots && lists.dynamicSlots.length === 0) return 'day-unavailable';
             return 'day-available';
         }
+
         return null;
-    }, [monthlyAvailability, lists.dynamicSlots.length, formData.date, formData.prestadorId, formData.servicioId, status.loading.slots]);
+    }, [detailedAvailability, formData.prestadorId, formData.servicioId]);
 
     if (status.loading.initial) {
         return <Container className="text-center py-5"><Spinner animation="border" /></Container>;
@@ -247,7 +324,9 @@ const AppointmentForm = () => {
                                     <h5 className="mb-3 fw-bold">2. Fecha y Hora</h5>
                                     <Row>
                                         <Col xl={7} className="mb-3 mb-xl-0">
-                                            <Form.Group className="mb-3"><Form.Label>Fecha</Form.Label>
+                                            <Form.Group className="mb-3">
+                                                <Form.Label>Fecha</Form.Label>
+                                                {status.loading.monthly && <div className="text-center"><Spinner size="sm"/> <small>Actualizando calendario...</small></div>}
                                                 <Calendar 
                                                     className="availability-calendar" 
                                                     value={formData.date ? new Date(formData.date+"T12:00:00Z") : null} 

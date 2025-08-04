@@ -42,7 +42,9 @@ const PatientForm = () => {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    SeguroService.getAll().then((res) => setSeguros(res.data));
+    // La corrección está en la siguiente línea.
+    // Se extrae el array de la propiedad `items` de la respuesta.
+    SeguroService.getAll().then((res) => setSeguros(res.data.items));
   }, []);
 
   useEffect(() => {

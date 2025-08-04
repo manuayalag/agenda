@@ -1,367 +1,229 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Row, Col, Card, Button, Badge, Alert } from 'react-bootstrap';
+import { Row, Col, Card, Button, Spinner, Alert, Form } from 'react-bootstrap';
+import Select from 'react-select';
 import { AuthContext } from '../../context/AuthContextValue';
-import { AppointmentService, DoctorService, PatientService } from '../../utils/api';
+// ⭐ CORRECCIÓN DE IMPORTACIÓN: Se importa 'ServicioService' desde su propio archivo
+import { AppointmentService, DoctorService, PatientService, SectorService } from '../../utils/api';
+import ServicioService from '../../services/ServicioService'; // <-- LÍNEA CORREGIDA
+import Calendar from 'react-calendar';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { es } from 'date-fns/locale';
+import 'react-calendar/dist/Calendar.css';
+import './Dashboard.css';
 
 const Dashboard = () => {
-  const { user, isAdmin, isSectorAdmin } = useContext(AuthContext);
+  const { user, isAdmin, isSectorAdmin, isDoctor } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
   const [stats, setStats] = useState({
     todayAppointments: 0,
     weekAppointments: 0,
-    totalDoctors: 0,
-    totalPatients: 0
   });
-  const [upcomingAppointments, setUpcomingAppointments] = useState([]);
+
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [dailyAppointments, setDailyAppointments] = useState([]);
+  const [monthlyAppointments, setMonthlyAppointments] = useState(new Set());
+  const [activeMonth, setActiveMonth] = useState(new Date());
+  
+  const [filters, setFilters] = useState({
+    prestadorId: isDoctor ? (user.prestador?.id || '') : '',
+    patientId: '',
+    sectorId: isSectorAdmin && !isAdmin ? (user.sectorId || '') : '',
+    status: 'scheduled',
+  });
+  
+  const [doctors, setDoctors] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [sectors, setSectors] = useState([]);
+
+  const fetchFiltersData = useCallback(async () => {
+    try {
+      const [doctorsRes, patientsRes, sectorsRes] = await Promise.all([
+        DoctorService.getAll(),
+        PatientService.getAll({ params: { size: 10000 } }),
+        SectorService.getAll({ params: { size: 1000 } })
+      ]);
+      setDoctors((doctorsRes.data || []).map(d => ({ value: d.id, label: d.user.fullName })));
+      setPatients((patientsRes.data.items || []).map(p => ({ value: p.id, label: p.fullName })));
+      setSectors((sectorsRes.data.items || []).map(s => ({ value: s.id, label: s.name })));
+    } catch (err) {
+      setError('Error al cargar datos para filtros.');
+      console.error(err);
+    }
+  }, []);
+
+  const fetchAppointments = useCallback(async (date, month) => {
+    setLoading(true);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const monthStart = format(startOfMonth(month), 'yyyy-MM-dd');
+    const monthEnd = format(endOfMonth(month), 'yyyy-MM-dd');
+
+    try {
+      const baseParams = { ...filters };
+      Object.keys(baseParams).forEach(key => (baseParams[key] === '' || baseParams[key] === null) && delete baseParams[key]);
+      
+      const [dailyRes, monthlyRes, statsRes] = await Promise.all([
+        AppointmentService.getFiltered({ ...baseParams, startDate: dateStr, endDate: dateStr }),
+        AppointmentService.getFiltered({ ...baseParams, startDate: monthStart, endDate: monthEnd }),
+        AppointmentService.getFiltered({ startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd') })
+      ]);
+
+      setDailyAppointments((dailyRes.data.data || []).sort((a, b) => a.startTime.localeCompare(b.startTime)));
+      const monthlyDates = new Set((monthlyRes.data.data || []).map(app => app.date));
+      setMonthlyAppointments(monthlyDates);
+      
+      const allUpcoming = statsRes.data.data || [];
+      setStats({
+          todayAppointments: allUpcoming.filter(a => a.date === format(new Date(), 'yyyy-MM-dd')).length,
+          weekAppointments: allUpcoming.length
+      });
+
+    } catch (err) {
+      setError('Error al cargar las citas.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    fetchFiltersData();
+  }, [fetchFiltersData]);
   
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        
-        // Obtener fecha actual y rango de la semana
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
-        const weekStart = new Date();
-        weekStart.setDate(today.getDate());
-        
-        const weekEnd = new Date();
-        weekEnd.setDate(today.getDate() + 7);
-        const weekEndStr = weekEnd.toISOString().split('T')[0];
-        
-        // Parámetros para filtrar citas
-        const params = {
-          startDate: todayStr,
-          endDate: weekEndStr
-        };
-        
-        // Variable para almacenar la respuesta de las citas y estadísticas
-        let appointmentsResponse = { data: [] };
-        let totalDoctors = 0;
-        let totalPatients = 0;
-          try {
-          if (user.role === 'doctor') {
-            // Para usuarios doctores, buscar sus citas específicas
-            // Buscar el ID del prestador correctamente
-            let prestadorId = null;
-            if (user.prestador && user.prestador.id) {
-              prestadorId = user.prestador.id;
-            } else if (user.prestadorId) {
-              prestadorId = user.prestadorId;
-            } else if (user.doctor && user.doctor.id) { // fallback legacy
-              prestadorId = user.doctor.id;
-            }
-            if (!prestadorId) {
-              console.warn("Este usuario doctor no tiene un ID de prestador asociado", user);
-            } else {
-              const response = await AppointmentService.getDoctorAppointments(prestadorId, params);
-              // Manejar tanto la respuesta directa como la estructura con data
-              appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
-            }
-          } else {
-            // Si es admin de sector, filtrar por su sector
-            if (user.role === 'sector_admin' && user.sectorId) {
-              params.sectorId = user.sectorId;
-            }
-            
-            const response = await AppointmentService.getFiltered(params);
-            // Manejar tanto la respuesta directa como la estructura con data
-            appointmentsResponse = Array.isArray(response.data) ? { data: response.data } : response;
-            
-            // Obtener total de doctores y pacientes (solo para admins y sector_admin)
-            if (isAdmin || isSectorAdmin) {
-              try {
-                const doctorsResponse = user.role === 'sector_admin' && user.sectorId 
-                  ? await DoctorService.getBySector(user.sectorId)
-                  : await DoctorService.getAll();
-                  
-                totalDoctors = doctorsResponse?.data?.length || 0;
-              } catch (err) {
-                console.error("Error al obtener doctores:", err);
-              }
-              
-              try {
-                const patientsResponse = await PatientService.getAll();
-                totalPatients = patientsResponse?.data?.length || 0;
-              } catch (err) {
-                console.error("Error al obtener pacientes:", err);
-                // No bloqueamos la ejecución si hay un error al cargar pacientes
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Error al obtener citas:", err);
-        }
-          // Filtrar citas de hoy y de la semana
-        const allAppointments = appointmentsResponse?.data?.data || appointmentsResponse?.data || [];
-        const todayAppointments = allAppointments.filter(
-          app => app.date === todayStr
-        );
-        
-        // Obtener próximas 5 citas
-        const upcomingApps = allAppointments
-          .filter(app => app.status === 'scheduled')
-          .sort((a, b) => {
-            if (a.date !== b.date) {
-              return a.date.localeCompare(b.date);
-            }
-            return a.startTime.localeCompare(b.startTime);
-          })
-          .slice(0, 5);
-        
-        // Actualizar estadísticas
-        setStats({
-          todayAppointments: todayAppointments.length,
-          weekAppointments: allAppointments.length,
-          totalDoctors,
-          totalPatients
-        });
-        
-        setUpcomingAppointments(upcomingApps);
-        setError('');
-      } catch (err) {
-        setError('Error al cargar los datos del dashboard');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchDashboardData();
-  }, [user, isSectorAdmin, isAdmin]);
-  
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'scheduled':
-        return <Badge bg="primary">Programada</Badge>;
-      case 'completed':
-        return <Badge bg="success">Completada</Badge>;
-      case 'cancelled':
-        return <Badge bg="danger">Cancelada</Badge>;
-      case 'no_show':
-        return <Badge bg="warning">No asistió</Badge>;
-      default:
-        return <Badge bg="secondary">Desconocido</Badge>;
-    }
+    fetchAppointments(selectedDate, activeMonth);
+  }, [selectedDate, activeMonth, fetchAppointments]);
+
+  const handleFilterChange = (name, selectedOption) => {
+    setFilters(prev => ({ ...prev, [name]: selectedOption ? selectedOption.value : '' }));
   };
   
-  if (loading) {
-    return (
-      <div className="text-center my-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Cargando...</span>
-        </div>
-      </div>
-    );
-  }
+  const tileContent = ({ date, view }) => {
+    if (view === 'month') {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      if (monthlyAppointments.has(dateStr)) {
+        return <div className="has-appointments-dot"></div>;
+      }
+    }
+    return null;
+  };
   
+  if (loading && doctors.length === 0) {
+    return <div className="text-center my-5"><Spinner animation="border" /></div>;
+  }
+
   return (
-    <div>
+    <div className="dashboard-container">
       <h2 className="mb-4">Dashboard</h2>
-      
-      {error && (
-        <Alert variant="danger">{error}</Alert>
-      )}
-      
-      <Row>
-        <Col lg={3} md={6} className="mb-4">
-          <Card className="border-0 shadow-sm h-100">
-            <Card.Body className="d-flex align-items-center">
-              <div className="rounded-circle bg-primary text-white p-3 me-3">
-                <i className="bi bi-calendar-check fs-4"></i>
-              </div>
-              <div>
-                <h6 className="mb-1">Citas Hoy</h6>
-                <h3 className="mb-0">{stats.todayAppointments}</h3>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        <Col lg={3} md={6} className="mb-4">
-          <Card className="border-0 shadow-sm h-100">
-            <Card.Body className="d-flex align-items-center">
-              <div className="rounded-circle bg-success text-white p-3 me-3">
-                <i className="bi bi-calendar-week fs-4"></i>
-              </div>
-              <div>
-                <h6 className="mb-1">Citas esta semana</h6>
-                <h3 className="mb-0">{stats.weekAppointments}</h3>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        
-        {isSectorAdmin && (
-          <>
-            <Col lg={3} md={6} className="mb-4">
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="d-flex align-items-center">
-                  <div className="rounded-circle bg-info text-white p-3 me-3">
-                    <i className="bi bi-people fs-4"></i>
-                  </div>
-                  <div>
-                    <h6 className="mb-1">Doctores</h6>
-                    <h3 className="mb-0">{stats.totalDoctors}</h3>
-                  </div>
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      <Row className="mb-4">
+        <Col lg={8}>
+          <Row>
+            <Col md={6} className="mb-3">
+              <Card className="stat-card">
+                <Card.Body>
+                  <div className="stat-icon icon-primary"><i className="bi bi-calendar-check"></i></div>
+                  <div className="stat-info"><h3>{stats.todayAppointments}</h3><p>Citas para Hoy</p></div>
                 </Card.Body>
               </Card>
             </Col>
-            
-            <Col lg={3} md={6} className="mb-4">
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Body className="d-flex align-items-center">
-                  <div className="rounded-circle bg-warning text-white p-3 me-3">
-                    <i className="bi bi-person-vcard fs-4"></i>
-                  </div>
-                  <div>
-                    <h6 className="mb-1">Pacientes</h6>
-                    <h3 className="mb-0">{stats.totalPatients}</h3>
-                  </div>
+            <Col md={6} className="mb-3">
+              <Card className="stat-card">
+                <Card.Body>
+                  <div className="stat-icon icon-success"><i className="bi bi-calendar-week"></i></div>
+                  <div className="stat-info"><h3>{stats.weekAppointments}</h3><p>Citas en los Próximos 7 Días</p></div>
                 </Card.Body>
               </Card>
             </Col>
-          </>
-        )}
+          </Row>
+        </Col>
+        <Col lg={4}>
+            <Card className="action-card">
+                <Card.Body className="d-flex flex-column justify-content-center p-3">
+                    <Button as={Link} to="/appointments/add" variant="primary" className="w-100 mb-2">
+                        <i className="bi bi-calendar-plus-fill me-2"></i>Agendar Nueva Cita
+                    </Button>
+                    <Button as={Link} to="/patients/add" variant="outline-primary" className="w-100">
+                        <i className="bi bi-person-plus-fill me-2"></i>Registrar Nuevo Paciente
+                    </Button>
+                </Card.Body>
+            </Card>
+        </Col>
       </Row>
-      
-      <Row>
-        <Col>
-          <Card className="border-0 shadow-sm">
-            <Card.Header className="bg-white d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Próximas Citas</h5>
-              <Button 
-                as={Link}
-                to="/appointments"
-                variant="outline-primary"
-                size="sm"
-              >
-                Ver Todas
-              </Button>
-            </Card.Header>
-            <Card.Body>
-              {upcomingAppointments.length > 0 ? (
-                <div className="table-responsive">
-                  <table className="table table-hover">
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Hora</th>
-                        <th>Paciente</th>
-                        {user.role !== 'doctor' && <th>Doctor</th>}
-                        <th>Estado</th>
-                        <th>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {upcomingAppointments.map(appointment => (                        <tr key={appointment.id}>
-                          <td>{appointment.date}</td>
-                          <td>{appointment.startTime ? appointment.startTime.substring(0, 5) : '--:--'}</td>
-                          <td>{appointment.patient?.fullName || 'Paciente no disponible'}</td>
-                          {user.role !== 'doctor' && (
-                            <td>
-                              {console.log(appointment.prestador.user.fullName)}
-                              {appointment.prestador.user.fullName ? appointment.prestador.user.fullName : 
-                               'Doctor no disponible'}
-                            </td>
-                          )}
-                          <td>{getStatusBadge(appointment.status)}</td>
-                          <td>
-                            <Button
-                              as={Link}
-                              to={`/appointments/edit/${appointment.id}`}
-                              variant="outline-primary"
-                              size="sm"
-                            >
-                              Ver
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-muted mb-0">No hay citas próximas</p>
-                </div>
+
+      <Card className="calendar-card">
+        <div className="calendar-header">
+          <h4>Calendario de Citas</h4>
+        </div>
+        <Row>
+          <Col lg={3} className="border-end-lg mb-4 mb-lg-0">
+            <h5>Filtros</h5>
+            <Form>
+              {!isDoctor && (
+                <Form.Group className="mb-3">
+                  <Form.Label>Médico</Form.Label>
+                  <Select options={doctors} isClearable placeholder="Todos" onChange={opt => handleFilterChange('prestadorId', opt)} />
+                </Form.Group>
               )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-      
-      {isAdmin && (
-        <Row className="mt-4">
-          <Col md={6} className="mb-4">
-            <Card className="border-0 shadow-sm">
-              <Card.Header className="bg-white">
-                <h5 className="mb-0">Acciones Rápidas (Admin)</h5>
-              </Card.Header>
-              <Card.Body>
-                <div className="d-grid gap-2">
-                  <Button 
-                    as={Link}
-                    to="/admin/users/add"
-                    variant="outline-primary"
-                  >
-                    Agregar Usuario
-                  </Button>
-                  <Button 
-                    as={Link}
-                    to="/admin/sectors/add"
-                    variant="outline-primary"
-                  >
-                    Agregar Sector
-                  </Button>
-                  <Button 
-                    as={Link}
-                    to="/admin/specialties/add"
-                    variant="outline-primary"
-                  >
-                    Agregar Especialidad
-                  </Button>
-                </div>
-              </Card.Body>
-            </Card>
+              {isAdmin && (
+                <Form.Group className="mb-3">
+                  <Form.Label>Sector</Form.Label>
+                  <Select options={sectors} isClearable placeholder="Todos" onChange={opt => handleFilterChange('sectorId', opt)} />
+                </Form.Group>
+              )}
+              <Form.Group className="mb-3">
+                <Form.Label>Paciente</Form.Label>
+                <Select options={patients} isClearable placeholder="Todos" onChange={opt => handleFilterChange('patientId', opt)} />
+              </Form.Group>
+              <Form.Group className="mb-3">
+                <Form.Label>Estado</Form.Label>
+                <Select
+                  options={[
+                    { value: 'scheduled', label: 'Programada' },
+                    { value: 'completed', label: 'Completada' },
+                    { value: 'cancelled', label: 'Cancelada' },
+                    { value: 'no_show', label: 'No Asistió' },
+                    { value: '', label: 'Todos' }
+                  ]}
+                  defaultValue={{ value: 'scheduled', label: 'Programada' }}
+                  onChange={opt => handleFilterChange('status', opt)}
+                />
+              </Form.Group>
+            </Form>
           </Col>
-          
-          <Col md={6} className="mb-4">
-            <Card className="border-0 shadow-sm">
-              <Card.Header className="bg-white">
-                <h5 className="mb-0">Gestión Clínica</h5>
-              </Card.Header>
-              <Card.Body>
-                <div className="d-grid gap-2">
-                  <Button 
-                    as={Link}
-                    to="/doctors/add"
-                    variant="outline-success"
-                  >
-                    Agregar Doctor
-                  </Button>
-                  <Button 
-                    as={Link}
-                    to="/patients/add"
-                    variant="outline-success"
-                  >
-                    Registrar Paciente
-                  </Button>
-                  <Button 
-                    as={Link}
-                    to="/appointments/add"
-                    variant="outline-success"
-                  >
-                    Nueva Cita
-                  </Button>
-                </div>
-              </Card.Body>
-            </Card>
+
+          <Col lg={5} className="border-end-lg mb-4 mb-lg-0 d-flex justify-content-center align-items-center">
+            <Calendar
+              onChange={setSelectedDate}
+              value={selectedDate}
+              locale="es-ES"
+              className="border-0 shadow-sm"
+              tileContent={tileContent}
+              onActiveStartDateChange={({ activeStartDate }) => setActiveMonth(activeStartDate)}
+            />
+          </Col>
+
+          <Col lg={4}>
+            <h5>Citas para el {format(selectedDate, 'dd MMMM, yyyy', { locale: es })}</h5>
+            {loading ? <div className="text-center"><Spinner animation="border" size="sm" /></div> :
+              <div className="appointment-list">
+                {dailyAppointments.length > 0 ? dailyAppointments.map(app => (
+                  <div key={app.id} className="appointment-item">
+                    <div className="appointment-time">{app.startTime.substring(0, 5)}</div>
+                    <div className="appointment-details">
+                      <strong>{app.patient?.fullName || 'N/A'}</strong>
+                      <small>{app.servicio?.nombre_servicio || 'N/A'}</small>
+                      {!isDoctor && <small className="d-block text-primary">{app.prestador?.user?.fullName || 'N/A'}</small>}
+                    </div>
+                  </div>
+                )) : <Alert variant="light" className="text-center mt-3">No hay citas para mostrar.</Alert>}
+              </div>
+            }
           </Col>
         </Row>
-      )}
+      </Card>
     </div>
   );
 };
