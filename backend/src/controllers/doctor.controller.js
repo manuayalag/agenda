@@ -1,37 +1,26 @@
+// src/controllers/doctor.controller.js
+
 const db = require('../models');
 const Prestador = db.Prestador;
 const User = db.User;
 const Appointment = db.Appointment;
 const PrestadorHorario = db.PrestadorHorario;
+const PrestadorAusencia = db.PrestadorAusencia;
 const { Op, Sequelize } = require('sequelize');
 
 exports.createPrestador = async (req, res) => {
   try {
     const { userId, specialtyId, sectorId, notes, active, licenseNumber } = req.body;
-
-    // Verificar que el usuario no esté ya asignado
     const existingPrestador = await Prestador.findOne({ where: { userId: userId } });
     if (existingPrestador) {
       return res.status(400).send({ message: "Este usuario ya está asignado a otro perfil de doctor." });
     }
-
-    // Verificar que el número de licencia no esté ya en uso
     const existingLicense = await Prestador.findOne({ where: { licenseNumber: licenseNumber } });
     if (existingLicense) {
         return res.status(400).send({ message: "Este número de matrícula ya está en uso." });
     }
-
-    const prestador = await Prestador.create({
-      userId,
-      specialtyId,
-      sectorId,
-      licenseNumber, // <-- CAMBIO: Se pasa al crear
-      notes,
-      active
-    });
-
+    const prestador = await Prestador.create({ userId, specialtyId, sectorId, licenseNumber, notes, active });
     res.status(201).send(prestador);
-
   } catch (error) {
     res.status(500).send({ message: error.message || "Ocurrió un error al crear el perfil del doctor." });
   }
@@ -92,7 +81,6 @@ exports.getPrestadorById = async (req, res) => {
 };
 
 exports.updatePrestador = async (req, res) => {
-    // La lógica original de esta función se mantiene
     const prestador = await Prestador.findByPk(req.params.id);
     if (!prestador) {
         return res.status(404).json({ message: 'Prestador no encontrado' });
@@ -102,27 +90,51 @@ exports.updatePrestador = async (req, res) => {
 };
 
 exports.getPrestadorHorarios = async (req, res) => {
-    // La lógica original de esta función se mantiene
     const horarios = await db.PrestadorHorario.findAll({ where: { prestadorId: req.params.id }});
     res.json(horarios);
 };
 
 exports.addPrestadorHorario = async (req, res) => {
-    // La lógica original de esta función se mantiene
     const horario = await db.PrestadorHorario.create({ prestadorId: req.params.id, ...req.body });
     res.json(horario);
 };
 
 exports.deletePrestadorHorario = async (req, res) => {
-    // La lógica original de esta función se mantiene
     await db.PrestadorHorario.destroy({ where: { id: req.params.scheduleId }});
     res.json({ success: true });
 };
 
-
-// --- NUEVA FUNCIÓN ---
-// Obtener disponibilidad para un mes completo.
+// Obtener disponibilidad para un mes completo (obsoleto, pero se mantiene por si acaso)
 exports.getMonthlyAvailability = async (req, res) => {
+    // ... (lógica anterior)
+};
+
+// Obtener disponibilidad para un día específico
+exports.getDailyAvailability = async (req, res) => {
+  const { id: prestadorId, date } = req.params;
+  if (!date) {
+    return res.status(400).json({ message: 'Se requiere la fecha para verificar disponibilidad' });
+  }
+  try {
+    const requestDate = new Date(date + 'T00:00:00Z');
+    const dayOfWeek = requestDate.getUTCDay() === 0 ? 7 : requestDate.getUTCDay();
+    const [workBlocks, existingAppointments, absences] = await Promise.all([
+      PrestadorHorario.findAll({ where: { prestadorId, dia: dayOfWeek }, order: [['hora_inicio', 'ASC']] }),
+      Appointment.findAll({ where: { prestadorId, date, status: { [Op.ne]: 'cancelled' } }, attributes: ['startTime', 'endTime', 'id'], order: [['startTime', 'ASC']] }),
+      PrestadorAusencia.findAll({ where: { prestadorId, fecha_inicio: { [Op.lte]: date }, fecha_fin: { [Op.gte]: date } } })
+    ]);
+    res.status(200).json({
+        workBlocks: workBlocks.map(b => ({ startTime: b.hora_inicio, endTime: b.hora_fin })),
+        existingAppointments,
+        absences: absences.map(a => ({ startTime: a.hora_inicio, endTime: a.hora_fin }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Error al obtener disponibilidad del prestador' });
+  }
+};
+
+// --- NUEVA FUNCIÓN PARA OBTENER TODO EL CALENDARIO MENSUAL ---
+exports.getMonthlySchedule = async (req, res) => {
     const { id: prestadorId } = req.params;
     const { year, month } = req.query;
 
@@ -131,96 +143,65 @@ exports.getMonthlyAvailability = async (req, res) => {
     }
 
     try {
-        const workSchedules = await PrestadorHorario.findAll({
-            where: { prestadorId },
-            attributes: ['dia'],
-            group: ['dia']
-        });
-        const workingDays = new Set(workSchedules.map(h => h.dia));
-
         const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-        const tempDate = new Date(year, month, 0);
-        const endDate = `${year}-${String(month).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+        const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
-        const appointments = await Appointment.findAll({
-            where: {
-                prestadorId,
-                date: { [Op.between]: [startDate, endDate] },
-                status: { [Op.ne]: 'cancelled' }
-            },
-            attributes: ['date', [Sequelize.fn('count', Sequelize.col('id')), 'count']],
-            group: ['date']
-        });
-        
-        const appointmentCounts = appointments.reduce((acc, app) => {
-            acc[app.get('date')] = app.get('count');
-            return acc;
-        }, {});
-        
-        const availability = {};
-        const daysInMonth = new Date(year, month, 0).getDate();
+        const [appointments, absences, workBlocks] = await Promise.all([
+            Appointment.findAll({
+                where: { prestadorId, date: { [Op.between]: [startDate, endDate] }, status: { [Op.ne]: 'cancelled' } },
+                attributes: ['date', 'startTime', 'endTime']
+            }),
+            PrestadorAusencia.findAll({
+                where: {
+                    prestadorId,
+                    [Op.or]: [
+                        { fecha_inicio: { [Op.between]: [startDate, endDate] } },
+                        { fecha_fin: { [Op.between]: [startDate, endDate] } },
+                        { [Op.and]: [{ fecha_inicio: { [Op.lte]: startDate } }, { fecha_fin: { [Op.gte]: endDate } }] }
+                    ]
+                }
+            }),
+            PrestadorHorario.findAll({ where: { prestadorId } })
+        ]);
 
-        for (let day = 1; day <= daysInMonth; day++) {
-            const currentDate = new Date(Date.UTC(year, month - 1, day));
-            const dayOfWeek = currentDate.getUTCDay() === 0 ? 7 : currentDate.getUTCDay();
-            const dateStr = currentDate.toISOString().split('T')[0];
-
-            if (workingDays.has(dayOfWeek)) {
-                // Simplificación: si tiene más de 15 citas, se considera lleno.
-                // Una lógica más precisa podría calcular los slots disponibles.
-                const isFull = (appointmentCounts[dateStr] || 0) > 15;
-                availability[dateStr] = isFull ? 'FULL' : 'AVAILABLE';
-            } else {
-                availability[dateStr] = 'NOT_WORKING';
-            }
-        }
-
-        res.status(200).json(availability);
+        res.status(200).json({ appointments, absences, workBlocks });
 
     } catch (error) {
-        console.error("Error en getMonthlyAvailability:", error);
-        res.status(500).json({ message: "Error al obtener la disponibilidad mensual." });
+        console.error("Error en getMonthlySchedule:", error);
+        res.status(500).json({ message: "Error al obtener el calendario mensual." });
     }
 };
 
+// --- CONTROLADORES PARA AUSENCIAS ---
+exports.getAusencias = async (req, res) => {
+    try {
+        const ausencias = await PrestadorAusencia.findAll({
+            where: { prestadorId: req.params.id },
+            order: [['fecha_inicio', 'DESC']]
+        });
+        res.status(200).json(ausencias);
+    } catch (error) {
+        res.status(500).json({ message: 'Error al obtener las ausencias.' });
+    }
+};
 
-// --- FUNCIÓN MODIFICADA ---
-// Renombrada de getPrestadorAvailability a getDailyAvailability.
-// Devuelve bloques de trabajo y citas existentes para que el frontend calcule los slots.
-exports.getDailyAvailability = async (req, res) => {
-  const { id: prestadorId, date } = req.params;
+exports.addAusencia = async (req, res) => {
+    try {
+        const ausencia = await PrestadorAusencia.create({
+            prestadorId: req.params.id,
+            ...req.body
+        });
+        res.status(201).json(ausencia);
+    } catch (error) {
+        res.status(400).json({ message: 'Error al crear la ausencia.', error: error.message });
+    }
+};
 
-  if (!date) {
-    return res.status(400).json({ message: 'Se requiere la fecha para verificar disponibilidad' });
-  }
-
-  try {
-    // La zona horaria puede ser un problema, usar UTC para consistencia
-    const requestDate = new Date(date + 'T00:00:00Z');
-    const dayOfWeek = requestDate.getUTCDay() === 0 ? 7 : requestDate.getUTCDay();
-
-    const workBlocks = await PrestadorHorario.findAll({
-        where: { prestadorId, dia: dayOfWeek },
-        order: [['hora_inicio', 'ASC']]
-    });
-    
-    const existingAppointments = await Appointment.findAll({
-        where: {
-            prestadorId: prestadorId,
-            date: date,
-            status: { [Op.ne]: 'cancelled' }
-        },
-        attributes: ['startTime', 'endTime', 'id'],
-        order: [['startTime', 'ASC']]
-    });
-
-    res.status(200).json({
-        workBlocks: workBlocks.map(b => ({ startTime: b.hora_inicio, endTime: b.hora_fin })),
-        existingAppointments
-    });
-
-  } catch (error) {
-    console.error(`Error en getDailyAvailability para prestador ${prestadorId} en fecha ${date}:`, error);
-    res.status(500).json({ message: error.message || 'Error al obtener disponibilidad del prestador' });
-  }
+exports.deleteAusencia = async (req, res) => {
+    try {
+        await PrestadorAusencia.destroy({ where: { id: req.params.absenceId } });
+        res.status(200).json({ success: true, message: 'Ausencia eliminada.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error al eliminar la ausencia.' });
+    }
 };

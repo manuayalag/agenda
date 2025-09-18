@@ -1,39 +1,36 @@
-"use strict";
+'use strict';
 
 module.exports = {
+  /**
+   * @param {import('sequelize').QueryInterface} queryInterface
+   * @param {import('sequelize').Sequelize} Sequelize
+   */
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable("prestador_horarios", {
-      id: {
-        type: Sequelize.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
-        allowNull: false,
+    /**
+     * La función 'up' se ejecuta cuando aplicas la migración.
+     * Aquí añadimos la columna 'id_seguro' a la tabla 'patients'.
+     */
+    await queryInterface.addColumn('patients', 'id_seguro', {
+      type: Sequelize.INTEGER,
+      allowNull: true, // Permitir que sea nulo, ya que pacientes existentes no lo tendrán
+      references: {
+        model: 'seguros_medicos', // Nombre de la tabla a la que hace referencia
+        key: 'id_seguro',
       },
-      prestadorId: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-        references: {
-          model: "prestadores",
-          key: "id",
-        },
-        onDelete: "CASCADE",
-      },
-      dia: {
-        type: Sequelize.INTEGER, // 1=Lunes, 2=Martes, ..., 7=Domingo
-        allowNull: false,
-      },
-      hora_inicio: {
-        type: Sequelize.TIME,
-        allowNull: false,
-      },
-      hora_fin: {
-        type: Sequelize.TIME,
-        allowNull: false,
-      },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',
     });
   },
 
+  /**
+   * @param {import('sequelize').QueryInterface} queryInterface
+   * @param {import('sequelize').Sequelize} Sequelize
+   */
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable("prestador_horarios");
-  },
+    /**
+     * La función 'down' se ejecuta si necesitas revertir la migración.
+     * Aquí eliminamos la columna que agregamos.
+     */
+    await queryInterface.removeColumn('patients', 'id_seguro');
+  }
 };

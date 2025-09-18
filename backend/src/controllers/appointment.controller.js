@@ -5,6 +5,55 @@ const Servicio = db.Servicio;
 const Patient = db.Patient;
 const nodemailer = require('nodemailer');
 
+// Obtener toda la data de un mes para un prestador
+exports.getMonthlySchedule = async (req, res) => {
+    const { id: prestadorId } = req.params;
+    const { year, month } = req.query;
+
+    if (!year || !month) {
+        return res.status(400).json({ message: "Se requiere año y mes." });
+    }
+
+    try {
+        const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+        // Realizamos todas las consultas a la base de datos en paralelo
+        const [appointments, absences, workBlocks] = await Promise.all([
+            Appointment.findAll({
+                where: {
+                    prestadorId,
+                    date: { [Op.between]: [startDate, endDate] },
+                    status: { [Op.ne]: 'cancelled' }
+                },
+                attributes: ['date', 'startTime', 'endTime']
+            }),
+            PrestadorAusencia.findAll({
+                where: {
+                    prestadorId,
+                    [Op.or]: [
+                        { fecha_inicio: { [Op.between]: [startDate, endDate] } },
+                        { fecha_fin: { [Op.between]: [startDate, endDate] } },
+                        { [Op.and]: [
+                            { fecha_inicio: { [Op.lte]: startDate } },
+                            { fecha_fin: { [Op.gte]: endDate } }
+                        ]}
+                    ]
+                }
+            }),
+            PrestadorHorario.findAll({
+                where: { prestadorId }
+            })
+        ]);
+
+        res.status(200).json({ appointments, absences, workBlocks });
+
+    } catch (error) {
+        console.error("Error en getMonthlySchedule:", error);
+        res.status(500).json({ message: "Error al obtener el calendario mensual." });
+    }
+};
+
 // Crear una cita
 exports.createAppointment = async (req, res) => {
   try {
@@ -209,122 +258,83 @@ exports.getAllAppointments = async (req, res) => {
 exports.getFilteredAppointments = async (req, res) => {
   try {
     const { sectorId, startDate, endDate, status, page = 1, limit = 10, prestadorId } = req.query;
-    
-    // Convertir a números para paginación
+
     const pageNum = parseInt(page) || 1;
     const limitNum = parseInt(limit) || 10;
     const offset = (pageNum - 1) * limitNum;
-    
-    // Verificar rol de usuario y asignar permisos correspondientes
+
     const user = await db.User.findByPk(req.userId);
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
-    
-    // Dependiendo del rol, aplicamos lógica diferente
+
     const where = {};
     const prestadorWhere = {};
-    
-    // Si es prestador, solo mostrar sus propias citas
-    if (user.role === 'prestador') {
+
+    // Si el usuario es un doctor (prestador), solo debe ver sus propias citas.
+    // Esta lógica ahora se maneja aquí directamente.
+    if (user.role === 'doctor') {
       const prestador = await db.Prestador.findOne({ where: { userId: user.id } });
       if (prestador) {
-        return exports.getPrestadorAppointments({ 
-          ...req, 
-          params: { prestadorId: prestador.id }, 
-          prestadorId: prestador.id
-        }, res);
+        where.prestadorId = prestador.id;
       } else {
-        // Si no tiene asociación con prestador, devolver array vacío
-        return res.status(200).json({
-          data: [],
-          pagination: {
-            totalItems: 0,
-            totalPages: 1,
-            currentPage: 1,
-            itemsPerPage: limitNum
-          }
-        });
+        // Si es un usuario con rol 'doctor' pero sin perfil de prestador, no tiene citas.
+        return res.status(200).json({ data: [], pagination: { totalItems: 0, totalPages: 1, currentPage: pageNum, itemsPerPage: limitNum } });
+      }
+    } else {
+      // Para otros roles (admin, sector_admin), aplicar filtros de la consulta
+      if (prestadorId) {
+        where.prestadorId = prestadorId;
+      }
+      if (sectorId) {
+        prestadorWhere.sectorId = sectorId;
+      } else if (user.role === 'sector_admin' && user.sectorId) {
+        prestadorWhere.sectorId = user.sectorId;
       }
     }
     
-    // Filtrar por prestador específico si se proporciona
-    if (prestadorId) {
-      where.prestadorId = prestadorId;
-    }
-    
-    // Filtrar por sector si se proporciona o basado en rol de admin de sector
-    if (sectorId) {
-      prestadorWhere.sectorId = sectorId;
-    } else if (user.role === 'sector_admin' && user.sectorId) {
-      prestadorWhere.sectorId = user.sectorId;
-    }
-    
-    // Filtrar por rango de fechas
     if (startDate && endDate) {
-      where.date = {
-        [db.Sequelize.Op.between]: [startDate, endDate]
-      };
+      where.date = { [db.Sequelize.Op.between]: [startDate, endDate] };
     } else if (startDate) {
-      where.date = {
-        [db.Sequelize.Op.gte]: startDate
-      };
+      where.date = { [db.Sequelize.Op.gte]: startDate };
     } else if (endDate) {
-      where.date = {
-        [db.Sequelize.Op.lte]: endDate
-      };
+      where.date = { [db.Sequelize.Op.lte]: endDate };
     }
-    
-    // Filtrar por estado
+
     if (status) {
       where.status = status;
-    }    // Contar total de registros para paginación
-    const count = await Appointment.count({
-      where: where,
-      include: [
+    }
+
+    const includeOptions = [
         {
-          model: db.Prestador,
-          as: 'prestador',
-          where: Object.keys(prestadorWhere).length ? prestadorWhere : null,
-          required: Object.keys(prestadorWhere).length > 0
-        }
-      ]
-    });
-    
-    // Obtener citas con paginación
-    const appointments = await Appointment.findAll({
-      where: where,
-      include: [
-        {
-          model: db.Prestador,
-          as: 'prestador',
-          where: Object.keys(prestadorWhere).length ? prestadorWhere : null,
-          required: Object.keys(prestadorWhere).length > 0,
-          include: [
-            { model: db.Specialty, as: 'specialty' },
-            { model: db.User, as: 'user', attributes: ['fullName'] },
-            { model: db.Sector, as: 'sector' }
-          ]
+            model: db.Prestador,
+            as: 'prestador',
+            include: [
+                { model: db.Specialty, as: 'specialty' },
+                { model: db.User, as: 'user', attributes: ['fullName'] },
+                { model: db.Sector, as: 'sector' }
+            ]
         },
-        {
-          model: db.Patient,
-          as: 'patient'
-        },
-        {
-          model: db.Servicio,
-          as: 'servicio',
-          attributes: ['id', 'nombre_servicio', 'precio', 'tiempo']
-        }
-      ],
+        { model: db.Patient, as: 'patient' },
+        { model: db.Servicio, as: 'servicio', attributes: ['id', 'nombre_servicio', 'precio', 'tiempo'] }
+    ];
+
+    if (Object.keys(prestadorWhere).length > 0) {
+        includeOptions[0].where = prestadorWhere;
+        includeOptions[0].required = true;
+    }
+
+    const { count, rows: appointments } = await Appointment.findAndCountAll({
+      where: where,
+      include: includeOptions,
       order: [['date', 'DESC'], ['startTime', 'ASC']],
       limit: limitNum,
-      offset: offset
+      offset: offset,
+      distinct: true // Agregado para asegurar un conteo correcto con joins
     });
-    
-    // Calcular número total de páginas
+
     const totalPages = Math.ceil(count / limitNum);
-    
-    // Estructura de respuesta para el frontend
+
     res.status(200).json({
       data: appointments,
       pagination: {
@@ -335,6 +345,7 @@ exports.getFilteredAppointments = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Error en getFilteredAppointments:', error);
     res.status(500).json({
       message: error.message
     });

@@ -27,6 +27,8 @@ import SpecialtyForm from './pages/admin/SpecialtyForm';
 import Doctors from './pages/prestadores/Doctors';
 import DoctorForm from './pages/prestadores/DoctorsForm';
 import DoctorSchedule from './pages/prestadores/DoctorSchedule';
+import PrestadorServicios from './pages/prestadores/PrestadorServicios';
+import DoctorAbsences from './pages/prestadores/DoctorAbsences';
 
 // Patients Pages
 import Patients from './pages/patients/Patients';
@@ -62,8 +64,6 @@ const PrivateRoute = ({ children, roles = [] }) => {
   }
 
   if (roles.length > 0 && !roles.includes(user.role)) {
-    // Para simplificar, redirigimos al dashboard si no tiene el rol.
-    // Podrías crear una página específica de "No Autorizado".
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -107,6 +107,8 @@ function App() {
           <Route path="add" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorForm /></PrivateRoute>} />
           <Route path="edit/:id" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorForm /></PrivateRoute>} />
           <Route path=":id/schedule" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorSchedule /></PrivateRoute>} />
+          <Route path=":id/absences" element={<PrivateRoute roles={['admin', 'sector_admin']}><DoctorAbsences /></PrivateRoute>} />
+          <Route path=":id/services" element={<PrivateRoute roles={['admin', 'sector_admin']}><PrestadorServicios /></PrivateRoute>} />
         </Route>
 
         {/* Patients Routes */}

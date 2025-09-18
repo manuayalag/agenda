@@ -25,16 +25,16 @@ exports.findAll = (req, res) => {
 
   // La condición busca en 'fullName' O en 'documentId'
   // Si no hay término de búsqueda, la condición es nula y trae todos los pacientes.
-  const condition = search
-    ? {
-        [Op.or]: [
-          { fullName: { [Op.iLike]: `%${search}%` } },
-          { documentId: { [Op.iLike]: `%${search}%` } }
-        ]
-      }
-    : null;
+  const where = {}; 
+  if (search) {
+    where[Op.or] = [
+      { fullName: { [Op.iLike]: `%${search}%` } },
+      { documentId: { [Op.iLike]: `%${search}%` } }
+    ];
+  }
 
-  Patient.findAndCountAll({ where: condition, limit, offset, order: [['fullName', 'ASC']] })
+  // Se usa el objeto 'where' que estará vacío si no hay búsqueda
+  Patient.findAndCountAll({ where: where, limit, offset, order: [['fullName', 'ASC']] })
     .then(data => {
       const response = getPagingData(data, page, limit);
       res.status(200).send(response);

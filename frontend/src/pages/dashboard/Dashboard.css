@@ -1,0 +1,120 @@
+/* Contenedor principal del Dashboard */
+.dashboard-container {
+  padding: 1.5rem;
+  background-color: #f8f9fa; /* Un fondo suave para toda la página */
+}
+
+/* Tarjetas de estadísticas y acciones rápidas */
+.stat-card, .action-card {
+  border: none;
+  border-radius: 1rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  height: 100%;
+}
+
+.stat-card:hover, .action-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+}
+
+.stat-card .card-body {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.action-card .card-body {
+    cursor: pointer;
+}
+
+.stat-icon {
+  font-size: 2.5rem;
+  padding: 1.2rem;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.stat-info h3 {
+  font-weight: 700;
+  margin: 0;
+}
+
+.stat-info p {
+  margin: 0;
+  color: #6c757d;
+}
+
+/* Colores para los íconos de estadísticas */
+.icon-primary { background-color: #0d6efd; }
+.icon-success { background-color: #198754; }
+.icon-info { background-color: #0dcaf0; }
+.icon-warning { background-color: #ffc107; }
+
+/* Tarjeta del Calendario */
+.calendar-card {
+  border: none;
+  border-radius: 1rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.calendar-header h4 {
+  margin: 0;
+  font-weight: 600;
+  color: #343a40;
+}
+
+/* Estilos para la lista de citas del día */
+.appointment-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.appointment-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+.appointment-item:last-child {
+  border-bottom: none;
+}
+
+.appointment-time {
+  font-weight: 600;
+  color: #275950;
+  margin-right: 1rem;
+  min-width: 100px;
+}
+
+.appointment-details {
+  flex-grow: 1;
+}
+
+.appointment-details strong {
+  display: block;
+}
+
+.appointment-details small {
+  color: #6c757d;
+}
+
+/* Punto verde para días con citas en el calendario */
+.has-appointments-dot {
+  height: 8px;
+  width: 8px;
+  background-color: #198754; /* Verde */
+  border-radius: 50%;
+  margin: 2px auto 0;
+}

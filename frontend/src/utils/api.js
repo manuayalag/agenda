@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_URL = 'http://85.31.60.190:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/';
 
 // Agregar interceptor para incluir el token en cada solicitud
 const api = axios.create({
@@ -71,7 +70,7 @@ export const UserService = {
   }
 };
 
-// --- Servicio de Doctores (MODIFICADO) ---
+// --- Servicio de Doctores
 export const DoctorService = {
   getAll: () => {
     return api.get('/doctors');
@@ -86,17 +85,17 @@ export const DoctorService = {
     return api.put(`/doctors/${id}`, doctorData);
   },
   
-  // --- FUNCIÓN MODIFICADA ---
-  // Llama al endpoint que devuelve los bloques de trabajo y citas de un día.
-  // Reemplaza la antigua getAvailability.
   getDailyAvailability: (id, date) => {
     return api.get(`/doctors/${id}/availability/${date}`);
   },
 
-  // --- FUNCIÓN AÑADIDA ---
-  // Llama al nuevo endpoint para obtener la disponibilidad de todo un mes.
   getMonthlyAvailability: (id, year, month) => {
     return api.get(`/doctors/${id}/monthly-availability`, { params: { year, month } });
+  },
+
+
+  getMonthlySchedule: (id, year, month) => {
+    return api.get(`/doctors/${id}/monthly-schedule`, { params: { year, month } });
   }
 };
 
